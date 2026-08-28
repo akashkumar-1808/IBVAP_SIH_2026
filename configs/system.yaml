@@ -1,0 +1,53 @@
+system:
+  environment_name: "production"
+  timezone_storage: "UTC"
+  log_level: "INFO"
+  evidence_storage_path: "storage/evidence"
+  database_url: "sqlite+aiosqlite:///storage/database/ibvap.db"
+  sync_database_url: "sqlite:///storage/database/ibvap.db"
+
+worker:
+  inference_fps: 10
+  environment_check_interval_seconds: 1.0
+  evidence_pre_seconds: 5.0
+  evidence_post_seconds: 5.0
+  max_frame_queue_size: 30
+
+detection:
+  confidence_threshold: 0.35
+  input_width: 640
+  input_height: 640
+  model_path: "models/detector/yolov8n.pt"
+
+tracking:
+  min_track_age_frames: 5
+  max_lost_frames: 30
+  iou_threshold: 0.5
+  track_high_thresh: 0.5
+  track_low_thresh: 0.1
+  new_track_thresh: 0.6
+
+environment:
+  low_light_brightness_threshold: 0.20
+  poor_quality_threshold: 0.40
+  blur_sharpness_threshold: 80.0
+  clahe_clip_limit: 2.5
+  clahe_tile_grid_size: [8, 8]
+
+behavior:
+  loitering_seconds: 15.0
+  loitering_max_displacement_pixels: 50.0
+  persistent_approach_seconds: 5.0
+  persistent_approach_min_speed: 5.0
+  repeated_approach_window_seconds: 120.0
+
+risk:
+  low_max: 30
+  medium_max: 60
+  high_max: 80
+  weights:
+    detection_conf: 0.15
+    track_persistence: 0.20
+    spatial_severity: 0.30
+    behavior_severity: 0.25
+    environment_quality_modifier: 0.10

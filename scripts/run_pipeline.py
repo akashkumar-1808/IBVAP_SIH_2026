@@ -335,7 +335,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--video",
         type=str,
-        default="storage/samples/test_video.mp4",
+        default="storage/samples/test_video5.mp4",
         help="Path to input video file (e.g. storage/samples/test_video.mp4)",
     )
     parser.add_argument(

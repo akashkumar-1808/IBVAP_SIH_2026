@@ -3,7 +3,7 @@ import sys
 import time
 import argparse
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -16,6 +16,20 @@ from worker.ingestion import FileVideoSource, BoundedFrameQueue
 from worker.perception import ObjectDetector
 from worker.tracking import ByteTrackTracker, draw_tracks
 from worker.environment import EnvironmentAnalyzer
+from worker.spatial import (
+    SpatialEngine,
+    CameraSpatialConfig,
+    ZonePolygon,
+    VirtualFence,
+    ZoneType,
+    draw_spatial_overlay,
+)
+from worker.behavior import (
+    BehaviorEngine,
+    BehaviorConfig,
+    BehaviorType,
+    BehaviorPrimitive,
+)
 
 
 def run_pipeline(
@@ -30,13 +44,13 @@ def run_pipeline(
         print("Please place your video file at that location or specify the path using --video <path>.\n")
         return
 
-    print("=" * 70)
-    print("      IBVAP — AI Video Analytics Pipeline Prototype Runner")
-    print("=" * 70)
+    print("=" * 75)
+    print("      IBVAP — AI Video Analytics Multi-Layer Pipeline Runner")
+    print("=" * 75)
     print(f"Input Video:        {video_path}")
     print(f"Output Video:       {output_path}")
     print(f"Confidence Thresh:  {confidence_threshold}")
-    print("=" * 70)
+    print("=" * 75)
 
     # 1. Initialize Ingestion Subsystem (Phase 2)
     source = FileVideoSource(
@@ -59,26 +73,77 @@ def run_pipeline(
     queue = BoundedFrameQueue(max_size=30)
 
     # 2. Initialize Baseline Perception Detector (Phase 3)
-    print("\nLoading Object Detector (YOLOv8n)...")
+    print("\n[Layer 1] Loading Object Detector (YOLOv8n)...")
     detector = ObjectDetector(confidence_threshold=confidence_threshold)
     detector.load()
     detector.warmup(input_size=(width, height))
 
     # 3. Initialize Multi-Object Tracker (Phase 4)
-    print("Initializing ByteTrack Multi-Object Tracker...")
+    print("[Layer 2] Initializing ByteTrack Multi-Object Tracker...")
     tracker = ByteTrackTracker(camera_id="cam_demo_01", min_hits=2, max_lost_frames=30)
 
     # 4. Initialize Environment Engine (Phase 5)
-    print("Initializing Environment Engine...")
+    print("[Layer 3] Initializing Environment Engine...")
     env_analyzer = EnvironmentAnalyzer()
+
+    # 5. Initialize Spatial Intelligence Engine (Phase 6)
+    print("[Layer 4] Initializing Spatial Intelligence Engine (Zones & Virtual Fencing)...")
+    spatial_engine = SpatialEngine()
+    # Configure demo zones (Safe perimeter on left, Buffer in middle, Restricted on right)
+    w3 = int(width / 3)
+    w23 = int(2 * width / 3)
+    spatial_config = CameraSpatialConfig(
+        camera_id="cam_demo_01",
+        zones=[
+            ZonePolygon(
+                id="zone_safe",
+                name="Safe Perimeter",
+                type=ZoneType.SAFE,
+                polygon=[(0, 0), (w3, 0), (w3, height), (0, height)],
+            ),
+            ZonePolygon(
+                id="zone_buffer",
+                name="Buffer Zone",
+                type=ZoneType.BUFFER,
+                polygon=[(w3, 0), (w23, 0), (w23, height), (w3, height)],
+            ),
+            ZonePolygon(
+                id="zone_restricted",
+                name="Restricted Area",
+                type=ZoneType.RESTRICTED,
+                polygon=[(w23, 0), (width, 0), (width, height), (w23, height)],
+            ),
+        ],
+        fences=[
+            VirtualFence(
+                id="fence_mid",
+                name="Security Barrier",
+                start_point=(float(w23), 0.0),
+                end_point=(float(w23), float(height)),
+            ),
+        ],
+        expected_threat_vector=(1.0, 0.0),  # Movement toward right/restricted area
+    )
+    spatial_engine.configure_camera(spatial_config)
+
+    # 6. Initialize Behavioral Analytics Engine (Phase 7)
+    print("[Layer 5] Initializing Behavioral Analytics Engine (Loitering, Approach, Occupancy)...")
+    behavior_config = BehaviorConfig(
+        loitering_seconds=3.0,
+        loitering_max_displacement_px=50.0,
+        persistent_approach_seconds=2.0,
+        repeated_approach_window_sec=15.0,
+    )
+    behavior_engine = BehaviorEngine(default_config=behavior_config)
+    behavior_engine.configure("cam_demo_01", behavior_config)
 
     # Setup Video Writer for output
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
-    print("\nStarting Pipeline Execution (Press 'q' in window to stop)...")
-    print("-" * 70)
+    print("\nStarting Pipeline Execution (Press 'q' in preview window to stop)...")
+    print("-" * 75)
 
     frame_idx = 0
     start_time = time.perf_counter()
@@ -115,26 +180,70 @@ def run_pipeline(
                 camera_id=frame_pkt.camera_id,
             )
 
+            # Phase 6: Spatial Intelligence
+            spatial_states = spatial_engine.process_tracks(
+                tracks=tracks,
+                camera_id=frame_pkt.camera_id,
+                timestamp_utc=frame_pkt.timestamp_utc,
+            )
+
+            # Phase 7: Behavioral Analytics
+            behavior_primitives = behavior_engine.process(
+                tracks=tracks,
+                spatial_states=spatial_states,
+                timestamp_utc=frame_pkt.timestamp_utc,
+                environment_state=env_state,
+            )
+
             dt_ms = (time.perf_counter() - t0) * 1000.0
             current_fps = 1000.0 / dt_ms if dt_ms > 0 else 0.0
 
-            # Render Tracking & Bounding Box Overlays
-            annotated = draw_tracks(frame_pkt.image, tracks, draw_trajectory=True)
+            # -------------------------------------------------------------
+            # Render Overlays
+            # -------------------------------------------------------------
+            # 1. Spatial Zones & Virtual Fences
+            annotated = draw_spatial_overlay(frame_pkt.image, spatial_config, spatial_states)
 
-            # Render Telemetry HUD Overlay (Top-Left Bar)
-            hud_bg_w = 420
-            hud_bg_h = 105
+            # 2. Tracking BBoxes & Trajectory Trails
+            annotated = draw_tracks(annotated, tracks, draw_trajectory=True)
+
+            # 3. Behavior Badges per Track
+            active_behaviors_by_track = {}
+            for b in behavior_primitives:
+                active_behaviors_by_track.setdefault(b.track_id, []).append(b)
+
+            for tr in tracks:
+                t_behaviors = active_behaviors_by_track.get(tr.track_id, [])
+                if t_behaviors:
+                    bx1, by1 = int(tr.bbox.x_min), int(tr.bbox.y_min)
+                    for i, b in enumerate(t_behaviors):
+                        b_text = f"[{b.behavior_type.value.upper()} {b.duration_seconds:.1f}s]"
+                        color = (0, 0, 255) if b.behavior_type in (BehaviorType.FENCE_BREACH, BehaviorType.RESTRICTED_OCCUPANCY) else (0, 165, 255)
+                        cv2.putText(
+                            annotated,
+                            b_text,
+                            (bx1, max(15, by1 - 10 - i * 18)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.50,
+                            color,
+                            2,
+                            cv2.LINE_AA,
+                        )
+
+            # 4. Telemetry HUD Overlay (Top-Left Bar)
+            hud_bg_w = 460
+            hud_bg_h = 125
             overlay = annotated.copy()
             cv2.rectangle(overlay, (10, 10), (10 + hud_bg_w, 10 + hud_bg_h), (0, 0, 0), -1)
-            cv2.addWeighted(overlay, 0.7, annotated, 0.3, 0, annotated)
+            cv2.addWeighted(overlay, 0.75, annotated, 0.25, 0, annotated)
 
-            # Text Lines on HUD
+            active_tracks = len([t for t in tracks if t.status.value == "tracked"])
             cv2.putText(
                 annotated,
-                f"IBVAP AI Engine | Frame {frame_idx}/{total_frames} ({current_fps:.1f} FPS)",
-                (20, 32),
+                f"IBVAP AI Multi-Layer Engine | Frame {frame_idx}/{total_frames} ({current_fps:.1f} FPS)",
+                (20, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
+                0.52,
                 (0, 255, 255),
                 1,
                 cv2.LINE_AA,
@@ -142,30 +251,40 @@ def run_pipeline(
             cv2.putText(
                 annotated,
                 f"Environment: {env_state.lighting.value.upper()} | Quality: {env_state.visibility.value.upper()} ({env_state.quality_score:.2f})",
-                (20, 56),
+                (20, 52),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.50,
+                0.48,
                 (0, 255, 0),
                 1,
                 cv2.LINE_AA,
             )
-            active_tracks = len([t for t in tracks if t.status.value == "tracked"])
             cv2.putText(
                 annotated,
-                f"Detections: {len(detections)} | Active Tracks: {active_tracks} | Blur: {env_state.blur_score:.1f}",
-                (20, 80),
+                f"Detections: {len(detections)} | Active Tracks: {active_tracks} | Blur Score: {env_state.blur_score:.1f}",
+                (20, 74),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.50,
+                0.48,
                 (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
+            beh_summary = ", ".join(set([b.behavior_type.value for b in behavior_primitives])) or "None"
+            cv2.putText(
+                annotated,
+                f"Active Behaviors ({len(behavior_primitives)}): {beh_summary}",
+                (20, 96),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (0, 165, 255) if behavior_primitives else (180, 180, 180),
                 1,
                 cv2.LINE_AA,
             )
             cv2.putText(
                 annotated,
                 f"Luminance: {env_state.brightness:.2f} | Contrast: {env_state.contrast:.2f} | Noise: {env_state.noise_estimate:.3f}",
-                (20, 102),
+                (20, 118),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
+                0.42,
                 (200, 200, 200),
                 1,
                 cv2.LINE_AA,
@@ -183,7 +302,7 @@ def run_pipeline(
                     break
 
             if frame_idx % 30 == 0 or frame_idx == total_frames:
-                print(f"Processed Frame {frame_idx}/{total_frames} | Detections: {len(detections)} | Active Tracks: {active_tracks} | Throughput: {current_fps:.1f} FPS")
+                print(f"Processed Frame {frame_idx}/{total_frames} | Tracks: {active_tracks} | Behaviors: {len(behavior_primitives)} ({beh_summary}) | Throughput: {current_fps:.1f} FPS")
 
     except KeyboardInterrupt:
         print("\nProcess interrupted by user.")
@@ -196,17 +315,19 @@ def run_pipeline(
         detector.close()
         tracker.close()
         env_analyzer.close()
+        spatial_engine.close()
+        behavior_engine.close()
         writer.release()
         if show_window:
             cv2.destroyAllWindows()
 
-        print("=" * 70)
+        print("=" * 75)
         print(f"Pipeline Completed:")
         print(f"Total Frames Processed: {frame_idx}")
         print(f"Total Time Taken:       {total_time:.2f}s")
         print(f"Average Pipeline FPS:   {avg_fps:.2f} FPS")
         print(f"Annotated Video Saved:  {os.path.abspath(output_path)}")
-        print("=" * 70)
+        print("=" * 75)
 
 
 if __name__ == "__main__":

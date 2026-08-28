@@ -32,6 +32,14 @@ htmlcov/
 storage/database/*.db
 storage/evidence/*
 !storage/evidence/.gitkeep
+storage/samples/*
+!storage/samples/README.md
+storage/output/*
+!storage/output/.gitkeep
+*.mp4
+*.avi
+*.mov
+*.mkv
 
 # Model weights
 models/**/*.pt

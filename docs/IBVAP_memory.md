@@ -654,28 +654,28 @@ dashboard
 
 ## Status
 
-**PHASE 6 COMPLETED — SPATIAL INTELLIGENCE & CAMERA-RELATIVE VIRTUAL FENCING INITIALIZED**
+**PHASE 7 COMPLETED — BEHAVIORAL ANALYTICS & TEMPORAL PATTERN ENGINE INITIALIZED**
 
-The Spatial Intelligence Engine, standard `SpatialEngineInterface`, `SpatialEngine` implementation, deterministic 2D image-coordinate geometry algorithms (ray-casting point-in-polygon with boundary tolerance $1e-5$, segment-segment intersection for virtual fence crossings, and cosine similarity motion vector direction estimation), multi-camera configuration isolation, overlapping zone precedence (`CRITICAL` > `RESTRICTED` > `BUFFER` > `SAFE`), unit test suite, deterministic replay test, and spatial benchmark suite have been implemented and verified.
+The Behavioral Analytics Engine, standard `BehaviorEngineInterface`, `BehaviorEngine` implementation, deterministic temporal detectors (`LoiteringDetector`, `ApproachDetector`, `OccupancyDetector`, `FenceBreachDetector`), explainable reason codes (`DWELL_TIME_EXCEEDED`, `LOW_DISPLACEMENT`, `PERSISTENT_TOWARD`, `RESTRICTED_OCCUPANCY`, `FENCE_CROSSED`, `REPEATED_APPROACH`), event de-duplication and cooldown management, unit test suite, deterministic replay test, and behavioral benchmark suite have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
 Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
-AI worker: PARTIALLY IMPLEMENTED (Ingestion + Perception + Tracking + Environment + Spatial active)
+AI worker: PARTIALLY IMPLEMENTED (Ingestion + Perception + Tracking + Environment + Spatial + Behavior active)
 Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
 Detector: IMPLEMENTED (ObjectDetector / DetectorInterface baseline active)
 Tracker: IMPLEMENTED (ByteTrackTracker / TrackerInterface baseline active)
 Environment engine: IMPLEMENTED (EnvironmentAnalyzer / Visual Quality Metrics active)
 Spatial engine: IMPLEMENTED (SpatialEngine / 2D Zone & Virtual Fence Reasoning active)
-Behavior engine: PLANNED (Event & behavior schemas defined; scheduled for Phase 7)
+Behavior engine: IMPLEMENTED (BehaviorEngine / Temporal Pattern Reasoning active)
 Evidence fusion: PLANNED (Risk priority schemas defined; scheduled for Phase 8)
 Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (65 unit & replay tests active with pytest)
+Tests: IMPLEMENTED (66 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -1204,15 +1204,88 @@ Phase 7: Behavioral Analytics & Event Engine (`worker/behavior/`).
 
 ---
 
+## [MEM-0010] Behavioral Analytics & Temporal Pattern Engine Initialized
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Created `BehaviorEngineInterface` abstract base class in `worker/behavior/base.py` (`configure`, `process`, `get_active_behaviors`, `reset`, `close`).
+2. Created behavioral data contracts in `worker/behavior/schemas.py`:
+   - `BehaviorType`: `LOITERING`, `PERSISTENT_APPROACH`, `RESTRICTED_OCCUPANCY`, `FENCE_BREACH`, `REPEATED_APPROACH`.
+   - `BehaviorStatus`: `CANDIDATE`, `ACTIVE`, `COMPLETED`, `EXPIRED`.
+   - `ReasonCode`: `DWELL_TIME_EXCEEDED`, `LOW_DISPLACEMENT`, `PERSISTENT_TOWARD`, `RESTRICTED_OCCUPANCY`, `FENCE_CROSSED`, `REPEATED_APPROACH`.
+   - `BehaviorConfig`: Configurable temporal windows (`loitering_seconds=5.0`, `loitering_max_displacement_px=40.0`, `persistent_approach_seconds=3.0`, `repeated_approach_window_sec=30.0`).
+   - `BehaviorPrimitive`: Canonical explainable behavior representation.
+3. Created specialized temporal detector modules:
+   - `LoiteringDetector` in `worker/behavior/loitering.py`: Evaluates dwell duration and displacement radius inside zones.
+   - `ApproachDetector` in `worker/behavior/approach.py`: Evaluates persistent motion toward threat vectors and recurring approach attempts.
+   - `OccupancyDetector` & `FenceBreachDetector` in `worker/behavior/occupancy.py`: Tracks sustained restricted zone occupancy and converts fence crossing events into behavior primitives.
+4. Created production `BehaviorEngine` in `worker/behavior/engine.py` with per-camera state isolation, bounded track memory, and sustained event de-duplication.
+5. Created unit tests in `tests/unit/test_behavior.py` and deterministic replay test in `tests/replay/test_behavior_replay.py`.
+6. Created behavior benchmark suite in `scripts/benchmark_behavior.py`.
+
+### Purpose
+
+Provide explainable temporal behavior pattern detection from track and spatial trajectories without making final security/threat classifications.
+
+### Git commit
+
+```text
+Commit: d6f00ce6b2e14277d547c680dd5c4a3b8859dc01
+Message: feat(worker): implement Behavioral Analytics Engine, temporal detectors, and replay tests
+```
+
+### Verification
+
+```text
+Command: pytest tests/unit/
+Result: 66 passed in 5.47s (100% PASS)
+- tests/unit/test_behavior.py (6 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_environment_analyzer.py (7 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_spatial.py (8 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/unit/test_tracker.py (9 passed)
+
+Benchmark Measured Performance (CPU):
+- Frames Processed: 1,000
+- Total Tracks Evaluated: 20,000
+- Total Behaviors Generated: 29,459
+- Mean Latency per Frame: 0.1679 ms
+- Min / Max Latency: 0.0658 ms / 0.5760 ms
+- P95 Latency: 0.2179 ms
+- Effective Behavior Engine Throughput: 5,956.41 FPS (CPU)
+```
+
+### Known issues / Notes
+
+Behavior primitives describe purely physical and temporal movement (e.g. loitering, approach); security risk scoring and threat level assignment are handled in Phase 8.
+
+### Next
+
+Phase 8: Multi-Modal Evidence Fusion & Risk Scoring Engine (`worker/fusion/`).
+
+---
+
 # 10. GIT HISTORY
 
 ## Current baseline
 
 ```text
 Branch: main
-HEAD: d90e27334d1409ee0d3e000e105aacbfc50f1d86
+HEAD: d6f00ce6b2e14277d547c680dd5c4a3b8859dc01
 Working tree: clean
-Total Commits: 10
+Total Commits: 11
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
@@ -1223,6 +1296,7 @@ Total Commits: 10
 8. 52c4a014497f53711d75901509b00cf554447cd4 - feat(worker): implement Environment Engine, visual quality metrics, and replay tests
 9. 30db6728c0abfe71e3c83d5890884f3d270c1d9c - docs(eval): capture Phase 5 perception anomalies and structured failure case corpus [MEM-0008]
 10. d90e27334d1409ee0d3e000e105aacbfc50f1d86 - feat(worker): implement Spatial Intelligence Engine, virtual fencing, and geometry tests
+11. d6f00ce6b2e14277d547c680dd5c4a3b8859dc01 - feat(worker): implement Behavioral Analytics Engine, temporal detectors, and replay tests
 ```
 
 ---
@@ -1253,7 +1327,7 @@ Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ## 11.3 AI Worker
 
 ```text
-Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + Spatial)
+Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + Spatial + Behavior)
 Entry point: worker/
 Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
 Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
@@ -1261,12 +1335,96 @@ Detector: ObjectDetector (YOLOv8n / PyTorch, DetectorInterface)
 Tracker: ByteTrackTracker (Kalman Filter + Linear Assignment, TrackerInterface)
 Environment: EnvironmentAnalyzer (Luminance, Contrast, Blur, Noise, Visibility Quality)
 Spatial: SpatialEngine (Point-in-Polygon, Virtual Fencing, Movement Direction)
-Behavior: PLANNED (Phase 7)
+Behavior: BehaviorEngine (Loitering, Persistent Approach, Restricted Occupancy, Fence Breach)
 Fusion: PLANNED (Phase 8)
 Evidence: PLANNED (Phase 9)
 Known issues: None
 Last changed: 2026-08-28
+Commit: d6f00ce6b2e14277d547c680dd5c4a3b8859dc01
+```
+
+## 11.4 Detector
+
+```text
+Status: IMPLEMENTED (Baseline Perception)
+Model: YOLOv8n (Pretrained COCO)
+Version: 8.4.37 (Ultralytics)
+Runtime: PyTorch 2.10.0+cpu
+Device: CPU (auto-detects CUDA)
+Classes: person, vehicle categories (car, truck, bus, motorcycle, bicycle), animal categories (dog, horse, etc.) mapped to TargetClass
+Artifact: models/detector/yolov8n.pt
+License: AGPL-3.0
+Input: BGR uint8 NumPy array (FramePacket)
+Output: List[Detection] in original frame coordinates [x_min, y_min, x_max, y_max]
+Measured latency: 44.22 ms (Mean)
+Measured FPS: 22.61 FPS (CPU, 640x480)
+Known limitations: Pretrained COCO false positives on shadows (skateboards) and vertical poles (fire hydrants) recorded in failure_cases/.
+Last changed: 2026-08-28
+Commit: e52adc59c98021d1c03997e6b124bf523adb0f39
+```
+
+## 11.5 Tracker
+
+```text
+Status: IMPLEMENTED (Multi-Object Tracking)
+Tracker: ByteTrackTracker (2-stage association + Kalman Filter)
+Version: Custom SciPy / NumPy implementation
+Input: List[Detection] from perception layer
+Output: List[TrackState] with track_id, center_xy, velocity_xy, speed, and bounded trajectory
+Lifecycle: CANDIDATE -> TRACKED -> LOST -> EXPIRED (pruned after max_lost_frames=30)
+Measured performance: 1.5290 ms update latency (~654 FPS) on CPU
+Known issues: None
+Last changed: 2026-08-28
+Commit: c264d1c93f8d9b4ac536946a754ce06665cbaf92
+```
+
+## 11.6 Environment Engine
+
+```text
+Status: IMPLEMENTED (Visual Quality Observation)
+Analyzer: EnvironmentAnalyzer (worker/environment/)
+Inputs: FramePacket (image array)
+Outputs: EnvironmentState (lighting, brightness, contrast, blur_score, noise_estimate, visibility, quality_score)
+Lighting: DAY, DUSK_DAWN, LOW_LIGHT, NIGHT
+Visibility: EXCELLENT, GOOD, FAIR, POOR, INSUFFICIENT
+Smoothing: Exponential Moving Average (EMA alpha=0.25)
+Measured latency: 7.33 ms (~136 FPS) on CPU
+Known issues: None
+Last changed: 2026-08-28
+Commit: 52c4a014497f53711d75901509b00cf554447cd4
+```
+
+## 11.7 Spatial Engine
+
+```text
+Status: IMPLEMENTED (2D Image-Coordinate Spatial Reasoning)
+Engine: SpatialEngine (worker/spatial/)
+Inputs: List[TrackState] from tracking engine + CameraSpatialConfig
+Outputs: List[SpatialState], List[FenceCrossingEvent]
+Zones: SAFE, BUFFER, RESTRICTED, CRITICAL (deterministic precedence)
+Fences: VirtualFence segment-segment trajectory intersection
+Direction: TOWARD, AWAY, PARALLEL, UNCERTAIN (Cosine similarity with threat vector)
+Coordinate space: 2D image coordinates (pixels)
+Measured latency: 0.2834 ms (~3,528 FPS) on CPU
+Known issues: None
+Last changed: 2026-08-28
 Commit: d90e27334d1409ee0d3e000e105aacbfc50f1d86
+```
+
+## 11.8 Behavior Engine
+
+```text
+Status: IMPLEMENTED (Temporal Pattern Reasoning)
+Engine: BehaviorEngine (worker/behavior/)
+Inputs: List[TrackState], List[SpatialState], Optional[EnvironmentState]
+Outputs: List[BehaviorPrimitive]
+Behaviors: LOITERING, PERSISTENT_APPROACH, RESTRICTED_OCCUPANCY, FENCE_BREACH, REPEATED_APPROACH
+Reason codes: DWELL_TIME_EXCEEDED, LOW_DISPLACEMENT, PERSISTENT_TOWARD, RESTRICTED_OCCUPANCY, FENCE_CROSSED, REPEATED_APPROACH
+Deduplication: Sustained active behaviors update duration without generating duplicate event objects
+Measured latency: 0.1679 ms (~5,956 FPS) on CPU
+Known issues: None
+Last changed: 2026-08-28
+Commit: d6f00ce6b2e14277d547c680dd5c4a3b8859dc01
 ```
 
 ## 11.4 Detector

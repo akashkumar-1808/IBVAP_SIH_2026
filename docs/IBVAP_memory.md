@@ -654,20 +654,20 @@ dashboard
 
 ## Status
 
-**PHASE 2 COMPLETED — VIDEO INGESTION SUBSYSTEM & BOUNDED FRAME QUEUE INITIALIZED**
+**PHASE 3 COMPLETED — BASELINE OBJECT DETECTION & DETECTOR INTERFACE INITIALIZED**
 
-The video ingestion subsystem, deterministic file replay source, RTSP stream source with exponential reconnect backoff, thread-safe bounded frame queue with drop-oldest policy, stream health monitoring, and replay test harness have been implemented and verified.
+The baseline object detector layer, standard `DetectorInterface`, `ObjectDetector` adapter (YOLOv8n / PyTorch), canonical `Detection` output mapping, debug visualization utility, unit test suite, deterministic detector replay test, and inference benchmark suite have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
 Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
-AI worker: PARTIALLY IMPLEMENTED (Video Ingestion Subsystem + Bounded Queue active)
+AI worker: PARTIALLY IMPLEMENTED (Video Ingestion Subsystem + Baseline Detector active)
 Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
-Detector: PLANNED (Interface defined in schema; scheduled for Phase 4)
-Tracker: PLANNED (TrackState schema defined; scheduled for Phase 5)
-Environment engine: PLANNED (Scheduled for Phase 3)
+Detector: IMPLEMENTED (ObjectDetector / DetectorInterface baseline active)
+Tracker: PLANNED (TrackState schema defined; scheduled for Phase 4)
+Environment engine: PLANNED (Scheduled for Phase 5)
 Spatial engine: PLANNED (Polygon/Fence schemas defined; scheduled for Phase 6)
 Behavior engine: PLANNED (Event & behavior schemas defined; scheduled for Phase 7)
 Evidence fusion: PLANNED (Risk priority schemas defined; scheduled for Phase 8)
@@ -675,7 +675,7 @@ Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (30 unit & replay tests active with pytest)
+Tests: IMPLEMENTED (38 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -887,7 +887,72 @@ OpenCV CAP_FFMPEG backend is used for RTSP and video files. RTSP capture runs on
 
 ### Next
 
-Phase 3: Environment Engine (Layer 2) for luminance, contrast, blur/sharpness, noise, and scene quality estimation.
+Phase 3: Baseline Object Detection & Detector Interface (`worker/perception/`).
+
+---
+
+## [MEM-0005] Baseline Object Detection & Detector Interface Initialized
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Created `DetectorInterface` abstract base class in `worker/perception/base.py` (`load`, `warmup`, `infer`, `get_metadata`, `close`).
+2. Created production `ObjectDetector` in `worker/perception/detector.py` implementing `DetectorInterface` on top of Ultralytics YOLOv8 / PyTorch runtime with configurable confidence thresholds, IOU thresholds, and compute device selection (CPU/CUDA).
+3. Created class mapping and normalization in `worker/perception/schemas.py` (`COCO_CLASS_MAP` mapping standard labels to `TargetClass.PERSON`, `TargetClass.VEHICLE`, `TargetClass.ANIMAL`, `TargetClass.UNKNOWN`).
+4. Created domain exceptions in `worker/perception/exceptions.py`.
+5. Created debug visualizer utility `draw_detections()` in `worker/perception/visualizer.py`.
+6. Created model registry documentation `models/README.md` and updated `.gitignore` for model weight binaries (`*.pt`, `*.onnx`).
+7. Added architecture decision `[DEC-0005]` in `docs/DECISIONS.md`.
+8. Created unit tests in `tests/unit/test_detector.py` and deterministic replay test in `tests/replay/test_detector_replay.py`.
+9. Created detector benchmark suite in `scripts/benchmark_detector.py`.
+
+### Purpose
+
+Establish a clean, reproducible object detection baseline directly consuming Phase 2 `FramePacket` objects, providing structured `Detection` outputs for future tracking and comparison against environment-adaptive processing.
+
+### Git commit
+
+```text
+Commit: e52adc59c98021d1c03997e6b124bf523adb0f39
+Message: feat(worker): implement baseline object detection layer, DetectorInterface, and replay tests
+```
+
+### Verification
+
+```text
+Command: pytest
+Result: 38 passed in 103.13s (100% PASS)
+- tests/replay/test_detector_replay.py (1 passed)
+- tests/replay/test_replay_runner.py (1 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+
+Benchmark Measured Performance (CPU):
+- Model Load Time: 1.0796s
+- Warmup Time: 0.2507s
+- Mean Latency: 44.22 ms
+- Min / Max Latency: 37.44 ms / 56.75 ms
+- P95 Latency: 49.95 ms
+- Effective Inference FPS: 22.61 FPS (640x480 resolution)
+```
+
+### Known issues / Notes
+
+Detector confidence is strictly model output probability [0, 1] and is not conflated with risk or tracking. RF-DETR interface compatibility is preserved via `DetectorInterface`.
+
+### Next
+
+Phase 4: Multi-Object Tracking Engine (`worker/tracking/`) implementing `TrackerInterface` and ByteTrack multi-frame association.
 
 ---
 
@@ -897,14 +962,15 @@ Phase 3: Environment Engine (Layer 2) for luminance, contrast, blur/sharpness, n
 
 ```text
 Branch: main
-HEAD: e018246fc69cefab998d4db096d78d0114378da1
+HEAD: e52adc59c98021d1c03997e6b124bf523adb0f39
 Working tree: clean
-Total Commits: 5
+Total Commits: 6
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
 4. 92bce3e55e5cd98a8d03ef9a55f4da9959162e20 - feat(backend): implement Supabase PostgreSQL and Storage data layer foundation
 5. e018246fc69cefab998d4db096d78d0114378da1 - feat(worker): implement video ingestion subsystem, bounded frame queue, and replay pipeline
+6. e52adc59c98021d1c03997e6b124bf523adb0f39 - feat(worker): implement baseline object detection layer, DetectorInterface, and replay tests
 ```
 
 ---
@@ -935,37 +1001,41 @@ Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ## 11.3 AI Worker
 
 ```text
-Status: IMPLEMENTED (Video Ingestion & Bounded Queue Layer)
-Entry point: worker/ingestion/
+Status: IMPLEMENTED (Video Ingestion & Baseline Perception Layer)
+Entry point: worker/
 Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
 Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
-Environment: PLANNED (Phase 3)
-Detector: PLANNED (Phase 4)
-Tracker: PLANNED (Phase 5)
+Detector: ObjectDetector (YOLOv8n / PyTorch, DetectorInterface)
+Tracker: PLANNED (Phase 4)
+Environment: PLANNED (Phase 5)
 Spatial: PLANNED (Phase 6)
 Behavior: PLANNED (Phase 7)
 Fusion: PLANNED (Phase 8)
 Evidence: PLANNED (Phase 9)
 Known issues: None
 Last changed: 2026-08-28
-Commit: e018246fc69cefab998d4db096d78d0114378da1
+Commit: e52adc59c98021d1c03997e6b124bf523adb0f39
 ```
 
 ## 11.4 Detector
 
 ```text
-Status: NOT RECORDED
-Model:
-Version:
-Runtime:
-Classes:
-Artifact:
-License:
-Input:
-Output:
-Measured latency:
-Measured FPS:
-Known limitations:
+Status: IMPLEMENTED (Baseline Perception)
+Model: YOLOv8n (Pretrained COCO)
+Version: 8.4.37 (Ultralytics)
+Runtime: PyTorch 2.10.0+cpu
+Device: CPU (auto-detects CUDA)
+Classes: person, vehicle categories (car, truck, bus, motorcycle, bicycle), animal categories (dog, horse, etc.) mapped to TargetClass
+Artifact: models/detector/yolov8n.pt
+License: AGPL-3.0
+Input: BGR uint8 NumPy array (FramePacket)
+Output: List[Detection] in original frame coordinates [x_min, y_min, x_max, y_max]
+Measured latency: 44.22 ms (Mean)
+Measured FPS: 22.61 FPS (CPU, 640x480)
+Known limitations: CPU inference; native RF-DETR package requires custom build when needed.
+Last changed: 2026-08-28
+Commit: e52adc59c98021d1c03997e6b124bf523adb0f39
+```
 Last changed:
 Commit:
 ```

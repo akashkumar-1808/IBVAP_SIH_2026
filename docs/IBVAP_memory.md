@@ -654,28 +654,28 @@ dashboard
 
 ## Status
 
-**PHASE 5 COMPLETED — ENVIRONMENT ENGINE & VISUAL QUALITY OBSERVATION INITIALIZED**
+**PHASE 6 COMPLETED — SPATIAL INTELLIGENCE & CAMERA-RELATIVE VIRTUAL FENCING INITIALIZED**
 
-The Environment Engine, standard `EnvironmentAnalyzerInterface`, `EnvironmentAnalyzer` implementation, vectorized image quality metrics (luminance distribution, RMS contrast, Laplacian sharpness variance, Immerkær high-frequency noise estimation), lighting and visibility classification, per-camera EMA temporal filtering, unit test suite, deterministic replay test, and environment benchmark suite have been implemented and verified.
+The Spatial Intelligence Engine, standard `SpatialEngineInterface`, `SpatialEngine` implementation, deterministic 2D image-coordinate geometry algorithms (ray-casting point-in-polygon with boundary tolerance $1e-5$, segment-segment intersection for virtual fence crossings, and cosine similarity motion vector direction estimation), multi-camera configuration isolation, overlapping zone precedence (`CRITICAL` > `RESTRICTED` > `BUFFER` > `SAFE`), unit test suite, deterministic replay test, and spatial benchmark suite have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
 Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
-AI worker: PARTIALLY IMPLEMENTED (Video Ingestion + Perception + Tracking + Environment active)
+AI worker: PARTIALLY IMPLEMENTED (Ingestion + Perception + Tracking + Environment + Spatial active)
 Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
 Detector: IMPLEMENTED (ObjectDetector / DetectorInterface baseline active)
 Tracker: IMPLEMENTED (ByteTrackTracker / TrackerInterface baseline active)
 Environment engine: IMPLEMENTED (EnvironmentAnalyzer / Visual Quality Metrics active)
-Spatial engine: PLANNED (Polygon/Fence schemas defined; scheduled for Phase 6)
+Spatial engine: IMPLEMENTED (SpatialEngine / 2D Zone & Virtual Fence Reasoning active)
 Behavior engine: PLANNED (Event & behavior schemas defined; scheduled for Phase 7)
 Evidence fusion: PLANNED (Risk priority schemas defined; scheduled for Phase 8)
 Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (56 unit & replay tests active with pytest)
+Tests: IMPLEMENTED (65 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -1124,15 +1124,95 @@ Phase 6: Spatial Intelligence Engine & Geo-referenced Virtual Fencing (`worker/s
 
 ---
 
+## [MEM-0009] Spatial Intelligence Engine & Camera-Relative Virtual Fencing Initialized
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Created `SpatialEngineInterface` abstract base class in `worker/spatial/base.py` (`configure_camera`, `process_tracks`, `get_spatial_state`, `reset`, `close`).
+2. Created deterministic 2D geometric algorithms in `worker/spatial/geometry.py`:
+   - Point-in-polygon ray-casting with explicit boundary and edge inclusion tolerance ($\epsilon = 1e-5$).
+   - Segment-segment cross-product intersection test with exact crossing coordinate calculation.
+   - Cosine-similarity movement direction estimation relative to camera threat vector (`TOWARD`, `AWAY`, `PARALLEL`, `UNCERTAIN`).
+   - Deadband threshold ($< 3.0\text{px}$) for stationary/sub-pixel noise.
+3. Created production `SpatialEngine` in `worker/spatial/engine.py`:
+   - Camera-specific zone and virtual fence configuration validation.
+   - Deterministic precedence for overlapping zones (`CRITICAL` > `RESTRICTED` > `BUFFER` > `SAFE`).
+   - State transition tracking per object track (`ZONE_ENTERED`, `ZONE_EXITED`).
+   - Virtual fence crossing events (`FenceCrossingEvent`) based on trajectory segments.
+   - Per-camera state and track isolation.
+4. Created domain exceptions in `worker/spatial/exceptions.py`.
+5. Created debug visualizer `draw_spatial_overlay` in `worker/spatial/visualizer.py`.
+6. Created unit tests in `tests/unit/test_spatial.py` and deterministic replay test in `tests/replay/test_spatial_replay.py`.
+7. Created spatial benchmark suite in `scripts/benchmark_spatial.py`.
+
+### Purpose
+
+Provide 2D camera-space spatial reasoning (zone containment, virtual fence crossing, and movement direction) from multi-object tracks before high-level behavioral and threat analysis layers.
+
+### Git commit
+
+```text
+Commit: d90e27334d1409ee0d3e000e105aacbfc50f1d86
+Message: feat(worker): implement Spatial Intelligence Engine, virtual fencing, and geometry tests
+```
+
+### Verification
+
+```text
+Command: pytest
+Result: 65 passed in ~3 min (Unit tests: 60 passed in 5.19s, 100% PASS)
+- tests/replay/test_detector_replay.py (1 passed)
+- tests/replay/test_environment_replay.py (1 passed)
+- tests/replay/test_replay_runner.py (1 passed)
+- tests/replay/test_spatial_replay.py (1 passed)
+- tests/replay/test_tracker_replay.py (1 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_environment_analyzer.py (7 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_spatial.py (8 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/unit/test_tracker.py (9 passed)
+
+Benchmark Measured Performance (CPU):
+- Frames Processed: 1,000
+- Total Tracks Processed: 20,000
+- Total Zone Checks: 80,000
+- Total Fence Checks: 40,000
+- Mean Latency per Frame: 0.2834 ms
+- Min / Max Latency: 0.2478 ms / 4.7117 ms
+- P95 Latency: 0.3896 ms
+- Effective Spatial Processing Throughput: 3,528.68 FPS (CPU)
+```
+
+### Known issues / Notes
+
+Operates in 2D image coordinates (pixels). Geolocation / world-coordinate mapping will only be added if camera calibration/homography is provided in a future phase.
+
+### Next
+
+Phase 7: Behavioral Analytics & Event Engine (`worker/behavior/`).
+
+---
+
 # 10. GIT HISTORY
 
 ## Current baseline
 
 ```text
 Branch: main
-HEAD: 52c4a014497f53711d75901509b00cf554447cd4
+HEAD: d90e27334d1409ee0d3e000e105aacbfc50f1d86
 Working tree: clean
-Total Commits: 8
+Total Commits: 10
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
@@ -1141,6 +1221,8 @@ Total Commits: 8
 6. e52adc59c98021d1c03997e6b124bf523adb0f39 - feat(worker): implement baseline object detection layer, DetectorInterface, and replay tests
 7. c264d1c93f8d9b4ac536946a754ce06665cbaf92 - feat(worker): implement ByteTrack multi-object tracking engine, TrackerInterface, and replay tests
 8. 52c4a014497f53711d75901509b00cf554447cd4 - feat(worker): implement Environment Engine, visual quality metrics, and replay tests
+9. 30db6728c0abfe71e3c83d5890884f3d270c1d9c - docs(eval): capture Phase 5 perception anomalies and structured failure case corpus [MEM-0008]
+10. d90e27334d1409ee0d3e000e105aacbfc50f1d86 - feat(worker): implement Spatial Intelligence Engine, virtual fencing, and geometry tests
 ```
 
 ---
@@ -1171,20 +1253,20 @@ Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ## 11.3 AI Worker
 
 ```text
-Status: IMPLEMENTED (Video Ingestion + Perception + Multi-Object Tracking + Environment)
+Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + Spatial)
 Entry point: worker/
 Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
 Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
 Detector: ObjectDetector (YOLOv8n / PyTorch, DetectorInterface)
 Tracker: ByteTrackTracker (Kalman Filter + Linear Assignment, TrackerInterface)
 Environment: EnvironmentAnalyzer (Luminance, Contrast, Blur, Noise, Visibility Quality)
-Spatial: PLANNED (Phase 6)
+Spatial: SpatialEngine (Point-in-Polygon, Virtual Fencing, Movement Direction)
 Behavior: PLANNED (Phase 7)
 Fusion: PLANNED (Phase 8)
 Evidence: PLANNED (Phase 9)
 Known issues: None
 Last changed: 2026-08-28
-Commit: 52c4a014497f53711d75901509b00cf554447cd4
+Commit: d90e27334d1409ee0d3e000e105aacbfc50f1d86
 ```
 
 ## 11.4 Detector
@@ -1202,7 +1284,7 @@ Input: BGR uint8 NumPy array (FramePacket)
 Output: List[Detection] in original frame coordinates [x_min, y_min, x_max, y_max]
 Measured latency: 44.22 ms (Mean)
 Measured FPS: 22.61 FPS (CPU, 640x480)
-Known limitations: CPU inference; native RF-DETR package requires custom build when needed.
+Known limitations: Pretrained COCO false positives on shadows (skateboards) and vertical poles (fire hydrants) recorded in failure_cases/.
 Last changed: 2026-08-28
 Commit: e52adc59c98021d1c03997e6b124bf523adb0f39
 ```
@@ -1236,6 +1318,23 @@ Measured latency: 7.33 ms (~136 FPS) on CPU
 Known issues: None
 Last changed: 2026-08-28
 Commit: 52c4a014497f53711d75901509b00cf554447cd4
+```
+
+## 11.7 Spatial Engine
+
+```text
+Status: IMPLEMENTED (2D Image-Coordinate Spatial Reasoning)
+Engine: SpatialEngine (worker/spatial/)
+Inputs: List[TrackState] from tracking engine + CameraSpatialConfig
+Outputs: List[SpatialState], List[FenceCrossingEvent]
+Zones: SAFE, BUFFER, RESTRICTED, CRITICAL (deterministic precedence)
+Fences: VirtualFence segment-segment trajectory intersection
+Direction: TOWARD, AWAY, PARALLEL, UNCERTAIN (Cosine similarity with threat vector)
+Coordinate space: 2D image coordinates (pixels)
+Measured latency: 0.2834 ms (~3,528 FPS) on CPU
+Known issues: None
+Last changed: 2026-08-28
+Commit: d90e27334d1409ee0d3e000e105aacbfc50f1d86
 ```
 Blur:
 Contrast:

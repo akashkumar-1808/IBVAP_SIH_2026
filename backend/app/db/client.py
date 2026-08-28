@@ -65,7 +65,12 @@ async def check_database_health() -> Tuple[str, Optional[str]]:
     except Exception as exc:
         err_msg = str(exc)
         # Check if table doesn't exist yet (schema not applied) vs connection/auth failure
-        if "relation \"public.cameras\" does not exist" in err_msg.lower() or "42p01" in err_msg.lower():
+        if (
+            "relation \"public.cameras\" does not exist" in err_msg.lower()
+            or "42p01" in err_msg.lower()
+            or "pgrst205" in err_msg.lower()
+            or "could not find the table" in err_msg.lower()
+        ):
             return "degraded", "Database connected but initial schema/migrations not yet applied"
         logger.warning(f"Database health check failed: {err_msg}")
         return "unreachable", "Database ping failed or rejected credentials"

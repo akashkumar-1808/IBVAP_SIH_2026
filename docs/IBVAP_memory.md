@@ -654,19 +654,19 @@ dashboard
 
 ## Status
 
-**PHASE 3 COMPLETED — BASELINE OBJECT DETECTION & DETECTOR INTERFACE INITIALIZED**
+**PHASE 4 COMPLETED — MULTI-OBJECT TRACKING ENGINE & TRACKER INTERFACE INITIALIZED**
 
-The baseline object detector layer, standard `DetectorInterface`, `ObjectDetector` adapter (YOLOv8n / PyTorch), canonical `Detection` output mapping, debug visualization utility, unit test suite, deterministic detector replay test, and inference benchmark suite have been implemented and verified.
+The multi-object tracking engine, standard `TrackerInterface`, `ByteTrackTracker` implementation (Kalman Filter + Hungarian matching via SciPy), canonical `TrackState` lifecycle management (`CANDIDATE -> TRACKED -> LOST -> EXPIRED`), bounded trajectory point history, velocity primitives, camera state isolation, unit test suite, deterministic replay test, and tracking benchmark suite have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
 Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
-AI worker: PARTIALLY IMPLEMENTED (Video Ingestion Subsystem + Baseline Detector active)
+AI worker: PARTIALLY IMPLEMENTED (Video Ingestion + Baseline Detector + Multi-Object Tracker active)
 Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
 Detector: IMPLEMENTED (ObjectDetector / DetectorInterface baseline active)
-Tracker: PLANNED (TrackState schema defined; scheduled for Phase 4)
+Tracker: IMPLEMENTED (ByteTrackTracker / TrackerInterface baseline active)
 Environment engine: PLANNED (Scheduled for Phase 5)
 Spatial engine: PLANNED (Polygon/Fence schemas defined; scheduled for Phase 6)
 Behavior engine: PLANNED (Event & behavior schemas defined; scheduled for Phase 7)
@@ -675,7 +675,7 @@ Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (38 unit & replay tests active with pytest)
+Tests: IMPLEMENTED (48 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -956,21 +956,89 @@ Phase 4: Multi-Object Tracking Engine (`worker/tracking/`) implementing `Tracker
 
 ---
 
+## [MEM-0006] Multi-Object Tracking Engine & Tracker Interface Initialized
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Created `TrackerInterface` abstract base class in `worker/tracking/base.py` (`update`, `get_tracks`, `reset`, `close`).
+2. Created 2D Kalman box filter state estimator in `worker/tracking/kalman.py` (`KalmanBoxTracker`) modeling 8-dimensional bounding box coordinates and velocities $[cx, cy, a, h, \dot{cx}, \dot{cy}, \dot{a}, \dot{h}]$.
+3. Created IoU matrix and Hungarian linear assignment matching utilities in `worker/tracking/matching.py` using `scipy.optimize.linear_sum_assignment`.
+4. Created `ByteTrackTracker` and `STrack` in `worker/tracking/tracker.py` with two-stage association (high-confidence and low-confidence detection matching), explicit lifecycle state transitions (`CANDIDATE -> TRACKED -> LOST -> EXPIRED`), bounded trajectory point history (max 60 points), instantaneous velocity calculation $(\Delta x / \Delta t, \Delta y / \Delta t)$, speed estimation, and per-camera isolation.
+5. Created debug visualizer `draw_tracks()` in `worker/tracking/visualizer.py` rendering colored bounding boxes, persistent Track IDs, status badges, and trailing trajectory lines.
+6. Created domain exceptions in `worker/tracking/exceptions.py`.
+7. Created unit test suite in `tests/unit/test_tracker.py` and deterministic end-to-end replay test in `tests/replay/test_tracker_replay.py`.
+8. Created tracker benchmark suite in `scripts/benchmark_tracker.py`.
+
+### Purpose
+
+Provide robust, multi-frame object track persistence consuming Phase 3 `Detection[]` outputs, enabling downstream trajectory, velocity, loitering, and zone reasoning without re-running detector inference.
+
+### Git commit
+
+```text
+Commit: c264d1c93f8d9b4ac536946a754ce06665cbaf92
+Message: feat(worker): implement ByteTrack multi-object tracking engine, TrackerInterface, and replay tests
+```
+
+### Verification
+
+```text
+Command: pytest
+Result: 48 passed in 17.87s (100% PASS)
+- tests/replay/test_detector_replay.py (1 passed)
+- tests/replay/test_replay_runner.py (1 passed)
+- tests/replay/test_tracker_replay.py (1 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/unit/test_tracker.py (9 passed)
+
+Benchmark Measured Performance (CPU):
+- Frames Processed: 200
+- Total Detections Processed: 1,890
+- Total Tracks Created: 10
+- Mean Update Latency: 1.5290 ms
+- Min / Max Latency: 1.0867 ms / 3.7437 ms
+- P95 Latency: 2.4949 ms
+- Effective Tracking FPS: 654.03 FPS
+```
+
+### Known issues / Notes
+
+No database writes or cross-camera ReID logic are introduced in tracking. Track IDs are scoped strictly per camera session.
+
+### Next
+
+Phase 5: Environment Engine (Layer 2) for luminance, contrast, blur/sharpness, noise, and scene quality estimation.
+
+---
+
 # 10. GIT HISTORY
 
 ## Current baseline
 
 ```text
 Branch: main
-HEAD: e52adc59c98021d1c03997e6b124bf523adb0f39
+HEAD: c264d1c93f8d9b4ac536946a754ce06665cbaf92
 Working tree: clean
-Total Commits: 6
+Total Commits: 7
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
 4. 92bce3e55e5cd98a8d03ef9a55f4da9959162e20 - feat(backend): implement Supabase PostgreSQL and Storage data layer foundation
 5. e018246fc69cefab998d4db096d78d0114378da1 - feat(worker): implement video ingestion subsystem, bounded frame queue, and replay pipeline
 6. e52adc59c98021d1c03997e6b124bf523adb0f39 - feat(worker): implement baseline object detection layer, DetectorInterface, and replay tests
+7. c264d1c93f8d9b4ac536946a754ce06665cbaf92 - feat(worker): implement ByteTrack multi-object tracking engine, TrackerInterface, and replay tests
 ```
 
 ---
@@ -1001,12 +1069,12 @@ Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ## 11.3 AI Worker
 
 ```text
-Status: IMPLEMENTED (Video Ingestion & Baseline Perception Layer)
+Status: IMPLEMENTED (Video Ingestion + Perception + Multi-Object Tracking)
 Entry point: worker/
 Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
 Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
 Detector: ObjectDetector (YOLOv8n / PyTorch, DetectorInterface)
-Tracker: PLANNED (Phase 4)
+Tracker: ByteTrackTracker (Kalman Filter + Linear Assignment, TrackerInterface)
 Environment: PLANNED (Phase 5)
 Spatial: PLANNED (Phase 6)
 Behavior: PLANNED (Phase 7)
@@ -1014,7 +1082,7 @@ Fusion: PLANNED (Phase 8)
 Evidence: PLANNED (Phase 9)
 Known issues: None
 Last changed: 2026-08-28
-Commit: e52adc59c98021d1c03997e6b124bf523adb0f39
+Commit: c264d1c93f8d9b4ac536946a754ce06665cbaf92
 ```
 
 ## 11.4 Detector
@@ -1036,22 +1104,20 @@ Known limitations: CPU inference; native RF-DETR package requires custom build w
 Last changed: 2026-08-28
 Commit: e52adc59c98021d1c03997e6b124bf523adb0f39
 ```
-Last changed:
-Commit:
-```
 
 ## 11.5 Tracker
 
 ```text
-Status: NOT RECORDED
-Tracker:
-Version:
-Input:
-Output:
-Measured performance:
-Known issues:
-Last changed:
-Commit:
+Status: IMPLEMENTED (Multi-Object Tracking)
+Tracker: ByteTrackTracker (2-stage association + Kalman Filter)
+Version: Custom SciPy / NumPy implementation
+Input: List[Detection] from perception layer
+Output: List[TrackState] with track_id, center_xy, velocity_xy, speed, and bounded trajectory
+Lifecycle: CANDIDATE -> TRACKED -> LOST -> EXPIRED (pruned after max_lost_frames=30)
+Measured performance: 1.5290 ms update latency (~654 FPS) on CPU
+Known issues: None
+Last changed: 2026-08-28
+Commit: c264d1c93f8d9b4ac536946a754ce06665cbaf92
 ```
 
 ## 11.6 Environment Engine

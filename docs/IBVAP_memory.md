@@ -1091,6 +1091,35 @@ Environment observation only in Phase 5. Adaptive enhancement / correction (e.g.
 
 ### Next
 
+Phase 5 Checkpoint: Anomaly Capture & Failure Case Analysis.
+
+---
+
+## [MEM-0008] Phase 5 Checkpoint: Perception Anomaly Capture & Failure Case Analysis
+
+**Status:** DIAGNOSED & DOCUMENTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Executed detailed perception and tracking diagnostic runs on sample test videos (`storage/samples/test_video.mp4`, `test_video2.mp4`).
+2. Created structured evaluation failure case directory `failure_cases/` (`shadows/`, `poles/`, `vehicles/`, `background_false_positives/`, `metadata/`).
+3. Captured and categorized 2,174 raw detection events across 400+ frames into `failure_cases/metadata/raw_detections_dump.json`.
+4. Documented in-depth root cause analysis in `failure_cases/README.md`:
+   - **Anomaly A (Shadow False Positive):** Pretrained COCO YOLOv8n misclassifies dark cast ground shadows as `skateboard` (idx 36, 90 occurrences) or `suitcase` (idx 28). Identified as a **Pretrained Model Limitation**, not a code bug.
+   - **Anomaly B (Pole / Structure False Positive):** Pretrained COCO YOLOv8n misclassifies slender vertical posts/bollards as `fire hydrant` (idx 10, 12 occurrences) or `parking meter` (idx 12, 2 occurrences). Identified as a **Pretrained Model Limitation**.
+   - **Anomaly C (Vehicle Mapping / UNKNOWN):** Valid cars detected as `car` correctly map to `TargetClass.VEHICLE`. When vehicles are occluded or predicted as non-vehicle COCO classes by the raw detector, `COCO_CLASS_MAP` correctly normalizes them to `TargetClass.UNKNOWN`. Schema mapping verified sound.
+   - **Anomaly D (Dark / Low-Contrast FP):** Low-contrast border patches trigger low-confidence animal detections (`dog`, `cat`, `bird`).
+   - **Anomaly E (Tracking Propagation):** ByteTrack faithfully tracks all bounding boxes passed to it; multi-frame false detections naturally form tracks until expiration. Expected modular tracker behavior.
+5. Strict baseline integrity preserved: No detector retraining, no threshold tweaking, no model modifications.
+
+### Purpose
+
+Establish a clean, reproducible baseline evaluation failure set before designing future adaptive perception and spatial reasoning layers.
+
+### Next
+
 Phase 6: Spatial Intelligence Engine & Geo-referenced Virtual Fencing (`worker/spatial/`).
 
 ---

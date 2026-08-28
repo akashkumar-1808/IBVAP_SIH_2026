@@ -654,20 +654,20 @@ dashboard
 
 ## Status
 
-**PHASE 4 COMPLETED — MULTI-OBJECT TRACKING ENGINE & TRACKER INTERFACE INITIALIZED**
+**PHASE 5 COMPLETED — ENVIRONMENT ENGINE & VISUAL QUALITY OBSERVATION INITIALIZED**
 
-The multi-object tracking engine, standard `TrackerInterface`, `ByteTrackTracker` implementation (Kalman Filter + Hungarian matching via SciPy), canonical `TrackState` lifecycle management (`CANDIDATE -> TRACKED -> LOST -> EXPIRED`), bounded trajectory point history, velocity primitives, camera state isolation, unit test suite, deterministic replay test, and tracking benchmark suite have been implemented and verified.
+The Environment Engine, standard `EnvironmentAnalyzerInterface`, `EnvironmentAnalyzer` implementation, vectorized image quality metrics (luminance distribution, RMS contrast, Laplacian sharpness variance, Immerkær high-frequency noise estimation), lighting and visibility classification, per-camera EMA temporal filtering, unit test suite, deterministic replay test, and environment benchmark suite have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
 Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
-AI worker: PARTIALLY IMPLEMENTED (Video Ingestion + Baseline Detector + Multi-Object Tracker active)
+AI worker: PARTIALLY IMPLEMENTED (Video Ingestion + Perception + Tracking + Environment active)
 Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
 Detector: IMPLEMENTED (ObjectDetector / DetectorInterface baseline active)
 Tracker: IMPLEMENTED (ByteTrackTracker / TrackerInterface baseline active)
-Environment engine: PLANNED (Scheduled for Phase 5)
+Environment engine: IMPLEMENTED (EnvironmentAnalyzer / Visual Quality Metrics active)
 Spatial engine: PLANNED (Polygon/Fence schemas defined; scheduled for Phase 6)
 Behavior engine: PLANNED (Event & behavior schemas defined; scheduled for Phase 7)
 Evidence fusion: PLANNED (Risk priority schemas defined; scheduled for Phase 8)
@@ -675,7 +675,7 @@ Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (48 unit & replay tests active with pytest)
+Tests: IMPLEMENTED (56 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -1023,15 +1023,87 @@ Phase 5: Environment Engine (Layer 2) for luminance, contrast, blur/sharpness, n
 
 ---
 
+## [MEM-0007] Environment Engine & Visual Quality Observation Initialized
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Created `EnvironmentAnalyzerInterface` abstract base class in `worker/environment/base.py` (`analyze`, `get_state`, `reset`, `close`).
+2. Created vectorized image statistic calculations in `worker/environment/metrics.py`:
+   - Normalized luminance distribution (mean, standard deviation, P10/P90 percentiles).
+   - Normalized RMS contrast $\sigma_Y / 255.0$.
+   - Sharpness / blur score via Laplacian variance $\sigma^2(\nabla^2 I)$.
+   - High-frequency noise estimation via Immerkær 3x3 residual convolution kernel.
+   - Rule-based lighting classification (`DAY`, `DUSK_DAWN`, `LOW_LIGHT`, `NIGHT`).
+   - Composite visual quality score $[0.0, 1.0]$ and visibility classification (`EXCELLENT`, `GOOD`, `FAIR`, `POOR`, `INSUFFICIENT`).
+3. Created production `EnvironmentAnalyzer` in `worker/environment/analyzer.py` with per-camera state isolation, exponential moving average (EMA) temporal smoothing ($\alpha = 0.25$), and configurable threshold parameters.
+4. Created domain exceptions in `worker/environment/exceptions.py`.
+5. Preserved baseline integrity: Detector in `worker/perception/` remains untouched and un-polluted by adaptive enhancement logic.
+6. Created unit tests in `tests/unit/test_environment_analyzer.py` and deterministic replay test in `tests/replay/test_environment_replay.py`.
+7. Created environment benchmark suite in `scripts/benchmark_environment.py`.
+
+### Purpose
+
+Provide structured, real-time observation of visual environmental conditions per camera stream without modifying baseline perception weights, establishing the telemetry foundation for future adaptive perception and risk certainty estimation.
+
+### Git commit
+
+```text
+Commit: 52c4a014497f53711d75901509b00cf554447cd4
+Message: feat(worker): implement Environment Engine, visual quality metrics, and replay tests
+```
+
+### Verification
+
+```text
+Command: pytest
+Result: 56 passed in 17.58s (100% PASS)
+- tests/replay/test_detector_replay.py (1 passed)
+- tests/replay/test_environment_replay.py (1 passed)
+- tests/replay/test_replay_runner.py (1 passed)
+- tests/replay/test_tracker_replay.py (1 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_environment_analyzer.py (7 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/unit/test_tracker.py (9 passed)
+
+Benchmark Measured Performance (CPU):
+- Frames Analyzed: 500
+- Mean Latency per Frame: 7.3256 ms
+- Min / Max Latency: 4.4718 ms / 35.8491 ms
+- P95 Latency: 8.9683 ms
+- Effective Analysis Throughput: 136.51 FPS (640x480 resolution)
+```
+
+### Known issues / Notes
+
+Environment observation only in Phase 5. Adaptive enhancement / correction (e.g., CLAHE / Retinex) will consume `EnvironmentState` in a future phase.
+
+### Next
+
+Phase 6: Spatial Intelligence Engine & Geo-referenced Virtual Fencing (`worker/spatial/`).
+
+---
+
 # 10. GIT HISTORY
 
 ## Current baseline
 
 ```text
 Branch: main
-HEAD: c264d1c93f8d9b4ac536946a754ce06665cbaf92
+HEAD: 52c4a014497f53711d75901509b00cf554447cd4
 Working tree: clean
-Total Commits: 7
+Total Commits: 8
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
@@ -1039,6 +1111,7 @@ Total Commits: 7
 5. e018246fc69cefab998d4db096d78d0114378da1 - feat(worker): implement video ingestion subsystem, bounded frame queue, and replay pipeline
 6. e52adc59c98021d1c03997e6b124bf523adb0f39 - feat(worker): implement baseline object detection layer, DetectorInterface, and replay tests
 7. c264d1c93f8d9b4ac536946a754ce06665cbaf92 - feat(worker): implement ByteTrack multi-object tracking engine, TrackerInterface, and replay tests
+8. 52c4a014497f53711d75901509b00cf554447cd4 - feat(worker): implement Environment Engine, visual quality metrics, and replay tests
 ```
 
 ---
@@ -1069,20 +1142,20 @@ Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ## 11.3 AI Worker
 
 ```text
-Status: IMPLEMENTED (Video Ingestion + Perception + Multi-Object Tracking)
+Status: IMPLEMENTED (Video Ingestion + Perception + Multi-Object Tracking + Environment)
 Entry point: worker/
 Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
 Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
 Detector: ObjectDetector (YOLOv8n / PyTorch, DetectorInterface)
 Tracker: ByteTrackTracker (Kalman Filter + Linear Assignment, TrackerInterface)
-Environment: PLANNED (Phase 5)
+Environment: EnvironmentAnalyzer (Luminance, Contrast, Blur, Noise, Visibility Quality)
 Spatial: PLANNED (Phase 6)
 Behavior: PLANNED (Phase 7)
 Fusion: PLANNED (Phase 8)
 Evidence: PLANNED (Phase 9)
 Known issues: None
 Last changed: 2026-08-28
-Commit: c264d1c93f8d9b4ac536946a754ce06665cbaf92
+Commit: 52c4a014497f53711d75901509b00cf554447cd4
 ```
 
 ## 11.4 Detector
@@ -1123,11 +1196,18 @@ Commit: c264d1c93f8d9b4ac536946a754ce06665cbaf92
 ## 11.6 Environment Engine
 
 ```text
-Status: NOT RECORDED
-Inputs:
-Outputs:
-Lighting:
-Visibility:
+Status: IMPLEMENTED (Visual Quality Observation)
+Analyzer: EnvironmentAnalyzer (worker/environment/)
+Inputs: FramePacket (image array)
+Outputs: EnvironmentState (lighting, brightness, contrast, blur_score, noise_estimate, visibility, quality_score)
+Lighting: DAY, DUSK_DAWN, LOW_LIGHT, NIGHT
+Visibility: EXCELLENT, GOOD, FAIR, POOR, INSUFFICIENT
+Smoothing: Exponential Moving Average (EMA alpha=0.25)
+Measured latency: 7.33 ms (~136 FPS) on CPU
+Known issues: None
+Last changed: 2026-08-28
+Commit: 52c4a014497f53711d75901509b00cf554447cd4
+```
 Blur:
 Contrast:
 Weather:

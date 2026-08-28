@@ -775,7 +775,60 @@ Timezone-aware UTC helpers `_utc_now()` standardizing on `datetime.now(timezone.
 
 ### Next
 
-Phase 1 / Task 1.1: Implement database ORM models and SQLite async storage layer (`backend/app/db/`).
+Phase 1: Implement Supabase PostgreSQL and Storage data layer foundation.
+
+---
+
+## [MEM-0003] Supabase PostgreSQL & Storage Backend Foundation
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Created `backend/.env.example` template for development without real secrets.
+2. Updated `.gitignore` to guarantee `.env`, `.env.*`, `backend/.env`, and local credentials are not tracked, while whitelisting `.env.example`.
+3. Created configuration manager `backend/app/config/settings.py` with `pydantic-settings` and `SecretStr` masking for sensitive Supabase keys.
+4. Created Supabase database client and secure health check `backend/app/db/client.py`.
+5. Created Supabase Storage abstraction `backend/app/db/storage.py` for evidence bucket operations.
+6. Created clean database repository layer `backend/app/db/repositories/` (`base.py`, `cameras.py`, `events.py`).
+7. Created FastAPI application factory `backend/app/main.py` and health endpoint `backend/app/api/routes/health.py` (`/health` and `/api/v1/health`).
+8. Created initial PostgreSQL migration script `supabase/migrations/20260828000000_initial_schema.sql` (cameras, zones, virtual_fences, events, model_versions, audit_logs, RLS policies).
+9. Created setup documentation `docs/SUPABASE_SETUP.md`.
+10. Added architecture decision `[DEC-0004]` in `docs/DECISIONS.md`.
+11. Created unit test suites for settings, db client, health endpoint, storage abstraction, and repositories (`test_config.py`, `test_db_client.py`, `test_health_api.py`, `test_storage_and_repos.py`).
+
+### Purpose
+
+Establish a robust, shared PostgreSQL database and storage foundation on Supabase for the FastAPI backend, with strict process isolation from the AI worker.
+
+### Git commit
+
+```text
+Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
+Message: feat(backend): implement Supabase PostgreSQL and Storage data layer foundation
+```
+
+### Verification
+
+```text
+Command: pytest
+Result: 17 passed in 0.91s (100% PASS)
+- test_config.py (3 passed)
+- test_db_client.py (3 passed)
+- test_health_api.py (3 passed)
+- test_schemas.py (4 passed)
+- test_storage_and_repos.py (4 passed)
+```
+
+### Known issues / Notes
+
+Supabase URL and API keys are externalized. When unconfigured, the backend boots safely in unconfigured mode and `/health` reports `database_status: not_configured` without error or secret leakage.
+
+### Next
+
+Phase 2: Video ingestion subsystem and bounded frame queue abstraction in worker.
 
 ---
 
@@ -785,12 +838,13 @@ Phase 1 / Task 1.1: Implement database ORM models and SQLite async storage layer
 
 ```text
 Branch: main
-HEAD: 6b388943039f7fbdf2e62976c2a9e3949e2d932a
+HEAD: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 Working tree: clean
-Total Commits: 3
+Total Commits: 4
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
+4. 92bce3e55e5cd98a8d03ef9a55f4da9959162e20 - feat(backend): implement Supabase PostgreSQL and Storage data layer foundation
 ```
 
 ---
@@ -803,31 +857,20 @@ Total Commits: 3
 Status: PLANNED
 Framework: React + TypeScript + Vite
 ```
-Components:
-Live feed:
-Alerts:
-Event detail:
-Configuration:
-Authentication:
-WebSocket:
-Known issues:
-Last changed:
-Commit:
-```
 
 ## 11.2 Backend
 
 ```text
-Status: NOT RECORDED
-Framework:
-Entry point:
-Routes:
-WebSocket:
-Authentication:
-Database:
-Services:
-Known issues:
-Last changed:
+Status: IMPLEMENTED (Foundation & Database Client)
+Framework: FastAPI + Pydantic v2
+Entry point: backend/app/main.py
+Routes: /health, /api/v1/health
+Database: Supabase PostgreSQL (PostgREST Client + Repository Layer)
+Storage: Supabase Storage ('evidence' bucket abstraction)
+Known issues: None
+Last changed: 2026-08-28
+Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
+```
 Commit:
 ```
 

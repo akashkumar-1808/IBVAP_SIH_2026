@@ -35,3 +35,17 @@ This document tracks all formal architectural and engineering decisions made dur
 - **Decision:** Implement a lightweight `EnvironmentEngine` evaluating Laplacian variance (blur/sharpness), luminance histograms, and contrast on incoming frames. Trigger selective low-light enhancements (CLAHE / Gamma) only when quality drops below configurable thresholds, and scale event certainty accordingly.
 - **Trade-offs:** Adds minimal CPU overhead per frame (~2-4ms) while significantly improving false alarm suppression and explainability.
 - **Affected Components:** `worker/environment/`, `worker/perception/`, `worker/fusion/`.
+
+---
+
+## [DEC-0004] Supabase PostgreSQL & Supabase Storage Backend Foundation
+- **Date:** 2026-08-28
+- **Status:** APPROVED
+- **Context:** Multi-developer collaboration and shared persistent storage require a robust cloud/remote PostgreSQL database and object storage for security incidents without machine-specific SQLite file locks or local-only storage.
+- **Decision:**
+  1. Adopt Supabase PostgreSQL as the primary shared application database, accessed via FastAPI backend repositories and PostgREST client.
+  2. Adopt Supabase Storage (`evidence` bucket) for security event frame snapshots (`.jpg`) and short video clip buffers (`.mp4`).
+  3. Strict architectural boundary: The AI/video worker runs independently and communicates structured data through the FastAPI backend. Continuous video feeds and heavy ML inference do **not** run inside Supabase.
+  4. Environment configurations are externalized (`.env.example`) with strict SecretStr masking to prevent credential leakage.
+- **Trade-offs:** Requires network connectivity to the Supabase endpoint for persistent event storage, while local offline cache fallback remains supported.
+- **Affected Components:** `backend/app/config/`, `backend/app/db/`, `supabase/migrations/`, `docs/SUPABASE_SETUP.md`.

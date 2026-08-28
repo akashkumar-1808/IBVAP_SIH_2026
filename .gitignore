@@ -35,7 +35,13 @@ storage/evidence/*
 
 # Environment & credentials
 .env
+.env.*
 .env.local
+backend/.env
+backend/.env.*
+*.env
+!.env.example
+!backend/.env.example
 
 # Node / Frontend
 frontend/node_modules/

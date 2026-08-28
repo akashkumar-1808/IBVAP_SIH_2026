@@ -49,3 +49,17 @@ This document tracks all formal architectural and engineering decisions made dur
   4. Environment configurations are externalized (`.env.example`) with strict SecretStr masking to prevent credential leakage.
 - **Trade-offs:** Requires network connectivity to the Supabase endpoint for persistent event storage, while local offline cache fallback remains supported.
 - **Affected Components:** `backend/app/config/`, `backend/app/db/`, `supabase/migrations/`, `docs/SUPABASE_SETUP.md`.
+
+---
+
+## [DEC-0005] Baseline Object Detector Architecture & Runtime
+- **Date:** 2026-08-28
+- **Status:** APPROVED
+- **Context:** The baseline perception layer requires real-time generic object detection (person, vehicle, animal) wrapped in a decoupled interface to establish an un-adapted baseline for later comparison with environment-adaptive perception.
+- **Decision:**
+  1. Define a strict `DetectorInterface` in `worker/perception/base.py` (`load`, `warmup`, `infer`, `get_metadata`, `close`) consuming canonical `FramePacket` objects.
+  2. Integrate Ultralytics YOLOv8 / PyTorch real-time detector (AGPL-3.0 / enterprise runtime) as the immediately runnable baseline in the local Python environment where `rfdetr` native package is not pre-installed.
+  3. Strict class mapping: Raw model classes (e.g. `person`, `car`, `truck`, `dog`, `horse`) are mapped to IBVAP `TargetClass` enums (`PERSON`, `VEHICLE`, `ANIMAL`, `UNKNOWN`) while preserving original class index and raw labels in `Detection.metadata`.
+  4. Non-leakage guarantee: Detector confidence is strictly documented and handled as model prediction confidence, completely decoupled from risk scoring and tracking persistence.
+- **Trade-offs:** Provides 22+ FPS CPU inference immediately without custom C++/CUDA compilation, while maintaining a pure interface enabling drop-in replacement of RF-DETR or ONNX models.
+- **Affected Components:** `worker/perception/`, `tests/unit/test_detector.py`, `tests/replay/test_detector_replay.py`, `scripts/benchmark_detector.py`.

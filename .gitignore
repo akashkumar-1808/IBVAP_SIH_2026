@@ -33,6 +33,14 @@ storage/database/*.db
 storage/evidence/*
 !storage/evidence/.gitkeep
 
+# Model weights
+models/**/*.pt
+models/**/*.onnx
+models/**/*.engine
+models/**/*.bin
+*.pt
+*.onnx
+
 # Environment & credentials
 .env
 .env.*

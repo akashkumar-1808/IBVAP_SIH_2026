@@ -654,28 +654,28 @@ dashboard
 
 ## Status
 
-**PHASE 0 COMPLETED — REPOSITORY BASELINE & DATA CONTRACTS INITIALIZED**
+**PHASE 2 COMPLETED — VIDEO INGESTION SUBSYSTEM & BOUNDED FRAME QUEUE INITIALIZED**
 
-The project structure, shared schemas, default configuration, DECISIONS.md, and unit test suite have been established and verified.
+The video ingestion subsystem, deterministic file replay source, RTSP stream source with exponential reconnect backoff, thread-safe bounded frame queue with drop-oldest policy, stream health monitoring, and replay test harness have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
-Backend: PARTIALLY IMPLEMENTED (Schemas and configuration created)
-AI worker: PARTIALLY IMPLEMENTED (Data contracts defined)
-Database: PLANNED (Schema & ORM scheduled for Phase 1)
+Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
+AI worker: PARTIALLY IMPLEMENTED (Video Ingestion Subsystem + Bounded Queue active)
+Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
 Detector: PLANNED (Interface defined in schema; scheduled for Phase 4)
 Tracker: PLANNED (TrackState schema defined; scheduled for Phase 5)
-Environment engine: PLANNED (EnvironmentState schema defined; scheduled for Phase 3)
+Environment engine: PLANNED (Scheduled for Phase 3)
 Spatial engine: PLANNED (Polygon/Fence schemas defined; scheduled for Phase 6)
 Behavior engine: PLANNED (Event & behavior schemas defined; scheduled for Phase 7)
 Evidence fusion: PLANNED (Risk priority schemas defined; scheduled for Phase 8)
-Evidence storage: PLANNED (Storage layout specified; scheduled for Phase 9)
+Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (Unit test suite active with pytest)
+Tests: IMPLEMENTED (30 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -832,19 +832,79 @@ Phase 2: Video ingestion subsystem and bounded frame queue abstraction in worker
 
 ---
 
+## [MEM-0004] Video Ingestion Subsystem & Bounded Frame Queue
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Created VideoSource abstract base class `worker/ingestion/base.py` (`connect`, `read`, `is_alive`, `get_metadata`, `stop`, `close`, `get_health`).
+2. Created canonical `FramePacket` in `worker/ingestion/frame.py` with memory-efficient `__slots__`, top-left origin coordinate standards, BGR numpy array image representation, and timestamping.
+3. Created thread-safe `BoundedFrameQueue` in `worker/ingestion/queue.py` enforcing the **DROP OLDEST** overflow policy (`REAL-TIME FRESHNESS > PROCESSING EVERY STALE FRAME`), tracking `total_dropped`, `total_inserted`, and oldest frame age.
+4. Created `FileVideoSource` in `worker/ingestion/file_source.py` with deterministic replay, monotonic frame ID sequences, FPS progression, looping support, and real-time pacing options.
+5. Created `RTSPVideoSource` in `worker/ingestion/rtsp_source.py` with dedicated background capture thread, credential URL masking (`mask_rtsp_url`), frame timeout detection, and exponential reconnect backoff.
+6. Created stream health monitoring `worker/ingestion/health.py` (`StreamHealthState`: ONLINE, DEGRADED, STALE, DISCONNECTED, ERROR).
+7. Created domain exceptions in `worker/ingestion/exceptions.py`.
+8. Created unit tests in `tests/unit/test_bounded_queue.py`, `tests/unit/test_file_source.py`, and `tests/unit/test_rtsp_source.py`.
+9. Created replay pipeline test harness in `tests/replay/test_replay_runner.py`.
+10. Created standalone benchmark script `scripts/benchmark_ingestion.py`.
+
+### Purpose
+
+Build a robust, leak-free, bounded video transport foundation that delivers fresh video frames to downstream perception and tracking workers without letting stale frames accumulate.
+
+### Git commit
+
+```text
+Commit: e018246fc69cefab998d4db096d78d0114378da1
+Message: feat(worker): implement video ingestion subsystem, bounded frame queue, and replay pipeline
+```
+
+### Verification
+
+```text
+Command: pytest
+Result: 30 passed in 1.26s (100% PASS)
+- tests/replay/test_replay_runner.py (1 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+
+Benchmark Measured Throughput: 300 synthetic frames (640x480) decoded in 0.091s (~3296 decode FPS).
+Queue drop verified: 270 frames dropped into capacity-30 queue with monotonic newest retention.
+```
+
+### Known issues / Notes
+
+OpenCV CAP_FFMPEG backend is used for RTSP and video files. RTSP capture runs on an isolated background daemon thread to maintain buffer freshness.
+
+### Next
+
+Phase 3: Environment Engine (Layer 2) for luminance, contrast, blur/sharpness, noise, and scene quality estimation.
+
+---
+
 # 10. GIT HISTORY
 
 ## Current baseline
 
 ```text
 Branch: main
-HEAD: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
+HEAD: e018246fc69cefab998d4db096d78d0114378da1
 Working tree: clean
-Total Commits: 4
+Total Commits: 5
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
 4. 92bce3e55e5cd98a8d03ef9a55f4da9959162e20 - feat(backend): implement Supabase PostgreSQL and Storage data layer foundation
+5. e018246fc69cefab998d4db096d78d0114378da1 - feat(worker): implement video ingestion subsystem, bounded frame queue, and replay pipeline
 ```
 
 ---
@@ -871,26 +931,24 @@ Known issues: None
 Last changed: 2026-08-28
 Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ```
-Commit:
-```
 
 ## 11.3 AI Worker
 
 ```text
-Status: NOT RECORDED
-Entry point:
-Video sources:
-Frame queue:
-Environment:
-Detector:
-Tracker:
-Spatial:
-Behavior:
-Fusion:
-Evidence:
-Known issues:
-Last changed:
-Commit:
+Status: IMPLEMENTED (Video Ingestion & Bounded Queue Layer)
+Entry point: worker/ingestion/
+Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
+Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
+Environment: PLANNED (Phase 3)
+Detector: PLANNED (Phase 4)
+Tracker: PLANNED (Phase 5)
+Spatial: PLANNED (Phase 6)
+Behavior: PLANNED (Phase 7)
+Fusion: PLANNED (Phase 8)
+Evidence: PLANNED (Phase 9)
+Known issues: None
+Last changed: 2026-08-28
+Commit: e018246fc69cefab998d4db096d78d0114378da1
 ```
 
 ## 11.4 Detector

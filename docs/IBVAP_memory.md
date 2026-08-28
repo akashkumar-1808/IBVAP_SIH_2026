@@ -654,34 +654,30 @@ dashboard
 
 ## Status
 
-**INITIALIZATION**
+**PHASE 0 COMPLETED — REPOSITORY BASELINE & DATA CONTRACTS INITIALIZED**
 
-The project memory file has been created.
-
-No implementation history has been entered yet from the repository because this memory file is being established before the implementation record begins.
+The project structure, shared schemas, default configuration, DECISIONS.md, and unit test suite have been established and verified.
 
 ## Current implementation status
 
 ```text
-Frontend: NOT RECORDED
-Backend: NOT RECORDED
-AI worker: NOT RECORDED
-Database: NOT RECORDED
-Detector: NOT RECORDED
-Tracker: NOT RECORDED
-Environment engine: NOT RECORDED
-Spatial engine: NOT RECORDED
-Behavior engine: NOT RECORDED
-Evidence fusion: NOT RECORDED
-Evidence storage: NOT RECORDED
-ANPR: NOT RECORDED
-FRS: NOT RECORDED
-Docker: NOT RECORDED
-Tests: NOT RECORDED
-Deployment: NOT RECORDED
+Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
+Backend: PARTIALLY IMPLEMENTED (Schemas and configuration created)
+AI worker: PARTIALLY IMPLEMENTED (Data contracts defined)
+Database: PLANNED (Schema & ORM scheduled for Phase 1)
+Detector: PLANNED (Interface defined in schema; scheduled for Phase 4)
+Tracker: PLANNED (TrackState schema defined; scheduled for Phase 5)
+Environment engine: PLANNED (EnvironmentState schema defined; scheduled for Phase 3)
+Spatial engine: PLANNED (Polygon/Fence schemas defined; scheduled for Phase 6)
+Behavior engine: PLANNED (Event & behavior schemas defined; scheduled for Phase 7)
+Evidence fusion: PLANNED (Risk priority schemas defined; scheduled for Phase 8)
+Evidence storage: PLANNED (Storage layout specified; scheduled for Phase 9)
+ANPR: PLANNED (Optional isolated plugin)
+FRS: PLANNED (Optional isolated plugin)
+Docker: PLANNED (Scheduled for Phase 14)
+Tests: IMPLEMENTED (Unit test suite active with pytest)
+Deployment: PLANNED (Local workstation setup)
 ```
-
-> These are **memory initialization states**, not claims that the components do not exist. Once the repository is inspected, replace each status with the verified state.
 
 ---
 
@@ -707,67 +703,106 @@ IBVAP_memory.md
 
 ### Purpose
 
-Maintain a complete chronological record of:
-
-- implementations;
-- decisions;
-- commits;
-- models;
-- dependencies;
-- tests;
-- failures;
-- fixes;
-- deployment changes;
-- architecture changes;
-- known limitations.
+Maintain a complete chronological record of implementations, decisions, commits, models, dependencies, tests, failures, fixes, deployment changes, architecture changes, and known limitations.
 
 ### Git commit
 
 ```text
-Not yet recorded.
+Commit: 763a6a49782720d5f91afe652c4843b0c9783161
+Message: Feat : Initial Commit ith docs placement
 ```
 
 ### Verification
 
 ```text
 Memory file created successfully.
-Repository commit status: NOT YET RECORDED.
+Repository commit status: VERIFIED.
 ```
 
 ### Next
 
-Inspect repository and establish the first verified baseline snapshot.
+Inspect repository and establish the first verified baseline snapshot and implementation plan.
+
+---
+
+## [MEM-0002] Repository Baseline, Scaffolding, and Data Contracts Initialized
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-28
+
+### Change
+
+1. Created formal architecture decisions log: `docs/DECISIONS.md`.
+2. Created default system configuration: `configs/system.yaml`.
+3. Created Python dependency manifest: `requirements.txt`.
+4. Created pytest configuration: `pytest.ini`.
+5. Created project `.gitignore`.
+6. Created domain schemas and data contracts under `backend/app/schemas/`:
+   - `common.py` (Enums: TargetClass, LightingCondition, VisibilityQuality, StreamStatus, ZoneType, BehaviorType, EventPriority)
+   - `environment.py` (`EnvironmentState` with quality scores and image statistics)
+   - `spatial.py` (`ZonePolygon`, `VirtualFence`, `CameraSpatialConfig`)
+   - `camera.py` (`CameraCreate`, `CameraUpdate`, `CameraResponse`)
+   - `events.py` (`Detection`, `TrackState`, `EventRecord`, `EvidenceMetadata`)
+   - `__init__.py`
+7. Created initial unit tests: `tests/unit/test_schemas.py`.
+
+### Purpose
+
+Establish strong architectural boundaries, deterministic data contracts, and type safety across backend and worker layers.
+
+### Git commits
+
+```text
+Commit 1: e6ff13a17e149777530cfdc7504450b3c5e73f48
+Message: chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
+
+Commit 2: 6b388943039f7fbdf2e62976c2a9e3949e2d932a
+Message: chore: add .gitignore and un-track pycache artifacts
+```
+
+### Verification
+
+```text
+Command: pytest tests/unit/test_schemas.py
+Result: 4 passed in 0.14s (100% PASS)
+Python version: 3.13.14
+```
+
+### Known issues / Notes
+
+Timezone-aware UTC helpers `_utc_now()` standardizing on `datetime.now(timezone.utc)` for clean Python 3.13 deprecation compliance.
+
+### Next
+
+Phase 1 / Task 1.1: Implement database ORM models and SQLite async storage layer (`backend/app/db/`).
 
 ---
 
 # 10. GIT HISTORY
 
-> This section must be populated from actual Git history.
->
-> Never fabricate a commit hash.
-
 ## Current baseline
 
 ```text
-Repository: NOT YET INSPECTED IN THIS MEMORY FILE
-Branch: UNKNOWN
-HEAD: UNKNOWN
-Working tree: UNKNOWN
+Branch: main
+HEAD: 6b388943039f7fbdf2e62976c2a9e3949e2d932a
+Working tree: clean
+Total Commits: 3
+1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
+2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
+3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
 ```
 
 ---
 
 # 11. IMPLEMENTATION BASELINE
 
-This section should contain the latest verified state of every major component.
-
 ## 11.1 Frontend
 
 ```text
-Status: NOT RECORDED
-Framework:
-Entry point:
-Pages:
+Status: PLANNED
+Framework: React + TypeScript + Vite
+```
 Components:
 Live feed:
 Alerts:

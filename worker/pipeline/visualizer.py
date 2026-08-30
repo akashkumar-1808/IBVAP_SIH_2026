@@ -109,12 +109,12 @@ class LiveStreamVisualizer:
 
     def _draw_border_overlay(self, img: np.ndarray, proj: Optional[ProjectedBorder], is_calibrated: bool) -> None:
         """Draws projected world border line and buffer zones."""
-        if not is_calibrated or proj is None or not proj.image_polygon:
+        if not is_calibrated or proj is None or not proj.projected_points:
             # Uncalibrated Indicator
             cv2.putText(img, "SPATIAL: UNCALIBRATED", (14, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 140, 255), 1)
             return
 
-        pts = np.array(proj.image_polygon, dtype=np.int32)
+        pts = np.array(proj.projected_points, dtype=np.int32)
         if len(pts) >= 2:
             # Draw Main Border Line
             cv2.polylines(img, [pts], isClosed=False, color=COLOR_DANGER, thickness=3)
@@ -124,9 +124,9 @@ class LiveStreamVisualizer:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, COLOR_DANGER, 1)
 
         # Draw Warning Buffer if present
-        if proj.warning_buffer_polygon and len(proj.warning_buffer_polygon) >= 3:
-            buf_pts = np.array(proj.warning_buffer_polygon, dtype=np.int32)
-            cv2.polylines(img, [buf_pts], isClosed=True, color=COLOR_WARNING, thickness=1)
+        if proj.warning_buffer_points and len(proj.warning_buffer_points) >= 2:
+            buf_pts = np.array(proj.warning_buffer_points, dtype=np.int32)
+            cv2.polylines(img, [buf_pts], isClosed=False, color=COLOR_WARNING, thickness=2)
 
     def _draw_single_track(
         self,

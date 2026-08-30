@@ -138,6 +138,14 @@ def test_3_pipeline_visualizer_rendering():
         explanation_summary="Confirmed human border crossing in restricted zone",
     )
 
+    from worker.spatial.world_schemas import ProjectedBorder
+    proj = ProjectedBorder(
+        camera_id="CAM-TEST-03",
+        border_section_id="SEC-ALPHA",
+        projected_points=[(50.0, 240.0), (590.0, 240.0)],
+        warning_buffer_points=[(50.0, 200.0), (590.0, 200.0)],
+    )
+
     rendered = visualizer.render_frame(
         frame=frame,
         tracks=[track],
@@ -145,7 +153,7 @@ def test_3_pipeline_visualizer_rendering():
         behavior_primitives=behavior,
         events=[event],
         environment=None,
-        projected_border=None,
+        projected_border=proj,
         is_calibrated=True,
         fps=25.0,
     )

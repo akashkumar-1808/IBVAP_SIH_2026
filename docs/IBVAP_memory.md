@@ -1564,6 +1564,96 @@ MVP System Interface (Phase 10: System Integration & Worker Pipeline Orchestrati
 
 ---
 
+## [MEM-0015] Live MVP Execution and Orchestration Layer
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-30
+
+### Change
+
+1. Created Live Pipeline Orchestration Engine in `worker/pipeline/`:
+   - `schemas.py`: `PipelineConfig`, `PipelineMetrics`, `StageMetrics`, and `RunMode` (`HEADLESS`, `VISUAL`, `RECORD_DEBUG`).
+   - `visualizer.py`: `LiveStreamVisualizer` providing forensic OpenCV analytical overlays (calibrated world borders, warning buffers, ground contact points, trajectory trails, object tags, behavior tags, and risk alert banners).
+   - `orchestrator.py`: `LivePipelineOrchestrator` managing the full synchronous/asynchronous 9-stage intelligence chain from `VideoSource` (RTSP or test stream) through `EnvironmentAnalyzer`, `ObjectDetector`, `ByteTrackTracker`, `SpatialEngine`, `BehaviorEngine`, `FusionEngine`, and `EvidencePackager`.
+2. Created CLI Entrypoint in `scripts/run_live_mvp.py`:
+   - Configurable via CLI flags or environment variables (`IBVAP_RTSP_URL`, `IBVAP_CAMERA_ID`, `IBVAP_RUN_ID`, `IBVAP_DISPLAY`, `IBVAP_MAX_RUNTIME_SECONDS`).
+   - Masks RTSP stream credentials in all logs and terminal output.
+   - Provides prototype calibrated border loading (`BorderSection`, `CameraCalibration`, `CameraRegistration`).
+   - Exports structured run report on clean shutdown to `results/live_runs/<run_id>/` containing `summary.json`, `metrics.json`, `events.json`, `tracks.json`, and `environment.json`.
+3. Created Integration Test Suite in `tests/integration/test_live_pipeline.py`:
+   - 5/5 integration tests passed verifying pipeline configuration, synthetic frame ingestion, visualizer rendering, graceful shutdown, and RTSP credential masking.
+4. Registered `[DEC-0010]` in `docs/DECISIONS.md`.
+
+### Purpose
+
+Provide a robust, headless live execution and observation layer connecting the 9 intelligence layers to real physical RTSP cameras and test streams before constructing the React operator interface.
+
+### Git commit
+
+```text
+Commit: [PENDING_COMMIT]
+Message: feat(pipeline): implement temporary live MVP execution layer, OpenCV visualizer, and CLI runner
+```
+
+### Verification
+
+```text
+Command: pytest tests/unit/ tests/replay/ tests/integration/
+Result: 190 passed in 20.08s (100% PASS across 29 test modules)
+- tests/integration/test_live_pipeline.py (5 passed)
+- tests/unit/test_differentiation.py (20 passed)
+- tests/unit/test_evidence_extended.py (19 passed)
+- tests/unit/test_evidence_api.py (4 passed)
+- tests/unit/test_evidence.py (12 passed)
+- tests/unit/test_fusion.py (17 passed)
+- tests/unit/test_world_border.py (37 passed)
+- tests/unit/test_spatial.py (8 passed)
+- tests/unit/test_behavior.py (6 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_tracker.py (9 passed)
+- tests/unit/test_environment_analyzer.py (7 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/replay/test_multi_camera_differentiation_replay.py (1 passed)
+- tests/replay/test_evidence_replay.py (1 passed)
+- tests/replay/test_fusion_replay.py (1 passed)
+- tests/replay/test_border_replay.py (1 passed)
+- tests/replay/test_behavior_replay.py (1 passed)
+- tests/replay/test_detector_replay.py (1 passed)
+- tests/replay/test_environment_replay.py (1 passed)
+- tests/replay/test_spatial_replay.py (1 passed)
+- tests/replay/test_tracker_replay.py (1 passed)
+- tests/replay/test_replay_runner.py (1 passed)
+
+Stage Latency Breakdown (CPU Inference):
+- Environment Analysis: 2.18 ms
+- YOLOv8n Detection: 50.67 ms (CPU)
+- ByteTrack Tracking: 0.05 ms
+- Spatial World-Border: 0.02 ms
+- Behavioral Recognition: 0.001 ms
+- Multi-Modal Fusion: 0.02 ms
+- Evidence Storage: 0.0006 ms
+- Visualizer Rendering: 0.0015 ms
+- Total Frame Latency: 53.05 ms (~18.8 FPS on CPU)
+```
+
+### Known limitations
+
+1. Desktop GUI Context: OpenCV `--visual` display window requires an active X11/Wayland/Windows desktop session; `--headless` is default for headless environments.
+
+### Next
+
+MVP Operator Interface (Phase 10: React UI Dashboard Integration).
+
+---
+
 # 10. GIT HISTORY
 
 ## Current baseline

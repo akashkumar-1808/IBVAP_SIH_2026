@@ -139,3 +139,24 @@ This document tracks all formal architectural and engineering decisions made dur
   - **Pro:** Visibly demonstrates higher-level border intelligence, eliminates false alarms on transient/unverified detections, supports multi-camera handoff, 100% explainable and deterministic (>5,000 FPS throughput).
   - **Con:** Requires explicit camera transition topology configuration between adjacent cameras.
 - **Affected Components:** `worker/cross_camera/`, `worker/sector/`, `worker/fusion/`, `scripts/benchmark_differentiation.py`, `docs/IBVAP_memory.md`.
+
+---
+
+## [DEC-0010] Live MVP Execution and Orchestration Layer
+- **Date:** 2026-08-30
+- **Status:** APPROVED
+- **Context:** Prior to building the React operator dashboard, an end-to-end execution layer is required to connect the 9 verified intelligence layers to live RTSP camera streams, validate real-time frame rates, test calibration projections, and verify event/evidence packaging on physical hardware.
+- **Decision:**
+  1. **Live Pipeline Orchestrator (`worker/pipeline/`)**: Implement `LivePipelineOrchestrator` orchestrating `VideoSource` (RTSP or test stream) $\rightarrow$ `BoundedFrameQueue` $\rightarrow$ `EnvironmentAnalyzer` $\rightarrow$ `ObjectDetector` $\rightarrow$ `ByteTrackTracker` $\rightarrow$ `SpatialEngine` $\rightarrow$ `BehaviorEngine` $\rightarrow$ `FusionEngine` $\rightarrow$ `EvidencePackager` in a single unified loop.
+  2. **Security & Secrets**: Mask all RTSP stream credentials in logs and terminal outputs using `mask_rtsp_url()`. Configuration is read via environment variables (`IBVAP_RTSP_URL`, `IBVAP_CAMERA_ID`, etc.) or CLI flags.
+  3. **Execution Modes**: Provide three execution modes:
+     - `--headless`: Compact periodic terminal status monitoring without graphical dependencies.
+     - `--visual`: Real-time OpenCV HUD visualizer displaying calibrated world borders, tracks, ground points, behavior badges, and active event banners.
+     - `--record-debug`: Background video writer saving annotated debug MP4s to `results/live_runs/<run_id>/`.
+  4. **Run Reporting**: On clean shutdown (or SIGINT), compile and persist `summary.json`, `metrics.json`, `events.json`, `tracks.json`, and `environment.json` into structured run directories.
+  5. **Stage vs End-to-End Latency Tracking**: Track stage-by-stage latencies independently (e.g. environment: ~2.2ms, detection: ~50.7ms, tracking: ~0.05ms, spatial: ~0.02ms, behavior: ~0.001ms, fusion: ~0.02ms) to expose compute bottlenecks accurately.
+- **Trade-offs:**
+  - **Pro:** Fully verifies the perception, reasoning, and evidence packaging stack against physical RTSP cameras before frontend construction; zero mock dependencies for live tests.
+  - **Con:** OpenCV GUI windows require desktop display context in `--visual` mode; `--headless` is default for headless server deployments.
+- **Affected Components:** `worker/pipeline/`, `scripts/run_live_mvp.py`, `tests/integration/test_live_pipeline.py`, `docs/IBVAP_memory.md`.
+

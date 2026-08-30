@@ -71,13 +71,25 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
+_MAIN_LOOP: Any = None
+
+
+def set_main_event_loop(loop: Any) -> None:
+    global _MAIN_LOOP
+    _MAIN_LOOP = loop
+
+
 def broadcast_telemetry_sync(payload: Dict[str, Any]) -> None:
-    """Synchronous helper for worker loops to push telemetry."""
+    """Thread-safe helper for background worker loops to push telemetry."""
+    global _MAIN_LOOP
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(manager.broadcast(payload))
+        if _MAIN_LOOP and not _MAIN_LOOP.is_closed() and _MAIN_LOOP.is_running():
+            asyncio.run_coroutine_threadsafe(manager.broadcast(payload), _MAIN_LOOP)
         else:
-            loop.run_until_complete(manager.broadcast(payload))
-    except RuntimeError:
-        pass
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(manager.broadcast(payload))
+            except RuntimeError:
+                pass
+    except Exception as e:
+        logger.debug(f"Telemetry broadcast warning: {e}")

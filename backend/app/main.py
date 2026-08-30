@@ -17,6 +17,13 @@ logger = logging.getLogger("ibvap.backend")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup lifecycle
+    import asyncio
+    from .api.routes.ws import set_main_event_loop
+    try:
+        set_main_event_loop(asyncio.get_running_loop())
+    except Exception:
+        pass
+
     logger.info(f"Starting {settings.APP_NAME} in '{settings.ENVIRONMENT}' mode...")
     if settings.is_supabase_configured:
         db_status, msg = await check_database_health()

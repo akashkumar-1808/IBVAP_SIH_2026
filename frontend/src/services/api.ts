@@ -18,6 +18,42 @@ export async function fetchCameras(): Promise<CameraInfo[]> {
   return res.json();
 }
 
+export async function connectCamera(params: {
+  camera_id: string;
+  name: string;
+  rtsp_url: string;
+  sector_id?: string;
+  sector_name?: string;
+  device?: string;
+}): Promise<{ status: string; message: string; camera: CameraInfo }> {
+  const res = await fetch(`${API_BASE}/cameras/connect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Failed to connect RTSP camera');
+  }
+  return res.json();
+}
+
+export async function disconnectCamera(cameraId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/cameras/${cameraId}/disconnect`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed to disconnect camera ${cameraId}`);
+  return res.json();
+}
+
+export async function deleteCamera(cameraId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/cameras/${cameraId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`Failed to remove camera ${cameraId}`);
+  return res.json();
+}
+
 export async function fetchCameraCalibration(cameraId: string): Promise<CameraCalibration> {
   const res = await fetch(`${API_BASE}/cameras/${cameraId}/calibration`);
   if (!res.ok) throw new Error(`Failed to fetch calibration for ${cameraId}`);

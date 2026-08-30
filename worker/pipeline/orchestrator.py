@@ -111,6 +111,9 @@ class LivePipelineOrchestrator:
         self._last_status_print = time.time()
         self._fps_window: List[float] = []
 
+        # Real-Time Telemetry and Streaming Callback Hook
+        self.on_frame_processed: Optional[Any] = None
+
     def setup_prototype_border(
         self,
         border_section_id: str = "SEC-ALPHA",
@@ -359,6 +362,23 @@ class LivePipelineOrchestrator:
                 self._video_writer.write(vis_img)
 
         self._stage_latencies_history["visualization"].append((time.perf_counter() - t0) * 1000.0)
+
+        # Stage 9: External Telemetry / Streaming Hook
+        if self.on_frame_processed and callable(self.on_frame_processed):
+            fps_val = len(self._fps_window) / 2.0 if self._fps_window else 0.0
+            try:
+                self.on_frame_processed(
+                    packet=packet,
+                    env_state=env_state,
+                    detections=detections,
+                    tracks=tracks,
+                    spatial_states=spatial_states,
+                    behaviors=behaviors,
+                    events=events,
+                    fps=fps_val,
+                )
+            except Exception as e:
+                logger.warning(f"Error in on_frame_processed hook: {e}")
 
     def _print_startup_banner(self) -> None:
         """Prints formatted startup credentials banner."""

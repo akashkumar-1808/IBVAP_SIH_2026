@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { CameraCalibration, EnvironmentState, SpatialState, TrackState, BehaviorPrimitive, EventRecord } from '../../types';
 import { getStreamUrl } from '../../services/api';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Video, Plus } from 'lucide-react';
 
 interface PrimaryVideoPanelProps {
   cameraId: string;
@@ -13,6 +13,7 @@ interface PrimaryVideoPanelProps {
   spatialStates: SpatialState[];
   behaviors: BehaviorPrimitive[];
   activeEvents: EventRecord[];
+  onOpenAddCamera?: () => void;
 }
 
 export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
@@ -25,12 +26,17 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   spatialStates,
   behaviors,
   activeEvents,
+  onOpenAddCamera,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [streamSrc, setStreamSrc] = useState<string>('');
 
   useEffect(() => {
-    setStreamSrc(getStreamUrl(cameraId));
+    if (cameraId) {
+      setStreamSrc(getStreamUrl(cameraId));
+    } else {
+      setStreamSrc('');
+    }
   }, [cameraId]);
 
   // Primary active track (highest risk / most active)
@@ -87,12 +93,45 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
 
       {/* Main Video Viewport with Interactive SVG Overlay */}
       <div className="video-wrapper" ref={containerRef}>
-        <img
-          src={streamSrc}
-          alt={`Live stream for ${cameraId}`}
-          className="video-element"
-          onError={() => console.warn('Stream buffering or reconnecting...')}
-        />
+        {streamSrc ? (
+          <img
+            src={streamSrc}
+            alt={`Live stream for ${cameraId}`}
+            className="video-element"
+            onError={() => console.warn('Stream buffering or reconnecting...')}
+          />
+        ) : (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#070a0f',
+              gap: '12px',
+            }}
+          >
+            <Video size={36} color="var(--accent-cyan)" />
+            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+              NO LIVE STREAM CONNECTED
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', maxWidth: '360px', textAlign: 'center' }}>
+              Add a live RTSP stream URL to initiate real-time video ingestion, YOLO object detection, ByteTrack, and spatial border reasoning.
+            </div>
+            {onOpenAddCamera && (
+              <button
+                onClick={onOpenAddCamera}
+                className="btn-command btn-primary"
+                style={{ padding: '8px 16px', marginTop: '4px', gap: '6px' }}
+              >
+                <Plus size={14} />
+                <span>Connect Live RTSP Camera</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Dynamic World Border & Detection Overlay */}
         <svg className="svg-overlay" viewBox={`0 0 ${baseW} ${baseH}`} preserveAspectRatio="none">

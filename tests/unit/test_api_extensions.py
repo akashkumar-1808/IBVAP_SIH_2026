@@ -1,6 +1,6 @@
 """
 Unit tests for new Phase 10 API extensions:
-- Cameras and Calibration endpoints
+- Dynamic RTSP Cameras, Connection, and Calibration endpoints
 - Video streaming endpoints
 - WebSocket telemetry endpoint
 - Jury demonstration scenario endpoints
@@ -19,26 +19,20 @@ def test_cameras_list_and_get():
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
-    assert len(data) >= 3
-    assert any(c["camera_id"] == "CAM-01" for c in data)
-
-    resp_single = client.get("/api/v1/cameras/CAM-01")
-    assert resp_single.status_code == 200
-    assert resp_single.json()["camera_id"] == "CAM-01"
 
 
 def test_camera_calibration():
-    resp = client.get("/api/v1/cameras/CAM-01/calibration")
+    resp = client.get("/api/v1/cameras/LIVE-01/calibration")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["camera_id"] == "CAM-01"
+    assert data["camera_id"] == "LIVE-01"
     assert data["calibration_status"] == "CALIBRATED"
     assert "projected_points" in data
     assert len(data["projected_points"]) >= 2
 
 
 def test_stream_snapshot():
-    resp = client.get("/api/v1/streams/CAM-01/snapshot")
+    resp = client.get("/api/v1/streams/LIVE-01/snapshot")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "image/jpeg"
     assert len(resp.content) > 0
@@ -61,3 +55,23 @@ def test_scenario_run():
     data = resp.json()
     assert data["status"] == "started"
     assert data["scenario_id"] == "BORDER_CROSSING_BREACH"
+
+
+def test_camera_connect_and_disconnect():
+    # Test connection attempt to unreachable test URL
+    resp = client.post(
+        "/api/v1/cameras/connect",
+        json={
+            "camera_id": "TEST-CAM-99",
+            "name": "Test Border Cam",
+            "rtsp_url": "rtsp://invalid.nonexistent.host:554/live",
+            "sector_name": "Northern Border",
+        },
+    )
+    # Expected 400 since host is invalid
+    assert resp.status_code == 400
+
+    # Test disconnect endpoint
+    resp_disc = client.post("/api/v1/cameras/TEST-CAM-99/disconnect")
+    assert resp_disc.status_code == 200
+    assert resp_disc.json()["status"] == "DISCONNECTED"

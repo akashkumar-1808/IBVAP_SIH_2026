@@ -9,6 +9,7 @@ import { EventDetailsPanel } from './components/console/EventDetailsPanel';
 import { EvidencePackagePreview } from './components/console/EvidencePackagePreview';
 import { ActiveEventQueue } from './components/console/ActiveEventQueue';
 import { SectorMapPanel } from './components/console/SectorMapPanel';
+import { AddCameraModal } from './components/console/AddCameraModal';
 
 import {
   CameraInfo,
@@ -27,23 +28,25 @@ import {
   fetchScenarios,
   runScenario,
   acknowledgeEvent,
+  disconnectCamera,
 } from './services/api';
 
 import { TelemetryWebSocket } from './services/websocket';
 
 export const App: React.FC = () => {
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('CAM-01');
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [calibration, setCalibration] = useState<CameraCalibration | null>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null);
   const [evidencePackage, setEvidencePackage] = useState<EvidencePackage | null>(null);
   const [scenarios, setScenarios] = useState<DemonstrationScenario[]>([]);
   const [activeScenarioId, setActiveScenarioId] = useState<string>('');
+  const [isAddCameraModalOpen, setIsAddCameraModalOpen] = useState<boolean>(false);
 
   // Real-time live telemetry state from WebSocket
   const [telemetry, setTelemetry] = useState<TelemetryPacket>({
-    camera_id: 'CAM-01',
+    camera_id: '',
     timestamp_utc: new Date().toISOString(),
     fps: 0.0,
     is_calibrated: true,
@@ -83,7 +86,10 @@ export const App: React.FC = () => {
 
   // 2. Load Calibration for selected camera
   useEffect(() => {
-    if (!selectedCameraId) return;
+    if (!selectedCameraId) {
+      setCalibration(null);
+      return;
+    }
     fetchCameraCalibration(selectedCameraId)
       .then(setCalibration)
       .catch(() => setCalibration(null));
@@ -129,7 +135,35 @@ export const App: React.FC = () => {
       .catch(() => setEvidencePackage(null));
   };
 
-  // 5. Handle Scenario Run (Jury Replay)
+  // 5. Handle Camera Connection Callback
+  const handleCameraConnected = (newCamera: CameraInfo) => {
+    setCameras((prev) => {
+      const idx = prev.findIndex((c) => c.camera_id === newCamera.camera_id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = newCamera;
+        return updated;
+      }
+      return [...prev, newCamera];
+    });
+    setSelectedCameraId(newCamera.camera_id);
+  };
+
+  // 6. Handle Camera Disconnect
+  const handleDisconnectCamera = async (camId: string) => {
+    try {
+      await disconnectCamera(camId);
+      setCameras((prev) => prev.filter((c) => c.camera_id !== camId));
+      if (selectedCameraId === camId) {
+        const remaining = cameras.filter((c) => c.camera_id !== camId);
+        setSelectedCameraId(remaining.length > 0 ? remaining[0].camera_id : '');
+      }
+    } catch (err) {
+      console.warn('Failed to disconnect camera:', err);
+    }
+  };
+
+  // 7. Handle Scenario Run (Jury Replay)
   const handleSelectScenario = async (scId: string) => {
     setActiveScenarioId(scId);
     try {
@@ -139,7 +173,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // 6. Handle Event Acknowledge
+  // 8. Handle Event Acknowledge
   const handleAcknowledge = async (eventId: string) => {
     try {
       await acknowledgeEvent(eventId, 'Operator');
@@ -174,6 +208,8 @@ export const App: React.FC = () => {
           cameras={cameras}
           selectedCameraId={selectedCameraId}
           onSelectCamera={setSelectedCameraId}
+          onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
+          onDisconnectCamera={handleDisconnectCamera}
           events={events}
         />
 
@@ -182,7 +218,7 @@ export const App: React.FC = () => {
           {/* Primary Live/Replay Video Player with SVG Overlays */}
           <PrimaryVideoPanel
             cameraId={selectedCameraId}
-            cameraName={selectedCam?.name || 'Border Camera'}
+            cameraName={selectedCam?.name || 'No Active Camera'}
             fps={telemetry.fps}
             environment={telemetry.environment}
             calibration={calibration}
@@ -190,6 +226,7 @@ export const App: React.FC = () => {
             spatialStates={telemetry.spatial_states}
             behaviors={telemetry.behavior_primitives}
             activeEvents={telemetry.active_events}
+            onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
           />
 
           {/* 5 Core Intelligence Pillars Deck */}
@@ -222,6 +259,13 @@ export const App: React.FC = () => {
 
       {/* Bottom Footer Status Strip */}
       <BottomStatusBar />
+
+      {/* Connect RTSP Camera Modal */}
+      <AddCameraModal
+        isOpen={isAddCameraModalOpen}
+        onClose={() => setIsAddCameraModalOpen(false)}
+        onCameraConnected={handleCameraConnected}
+      />
     </div>
   );
 };

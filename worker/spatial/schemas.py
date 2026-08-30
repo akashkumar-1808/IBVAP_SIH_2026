@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from backend.app.schemas.common import ZoneType
 from backend.app.schemas.spatial import Point2D, ZonePolygon, VirtualFence, CameraSpatialConfig
+from .world_schemas import BorderSide, CrossingStatus, GroundContactPoint, SpatialConfidence
 
 
 class MovementDirection(str, Enum):
@@ -42,6 +43,12 @@ class SpatialState(BaseModel):
     fences_crossed: List[str] = Field(default_factory=list)
     crossing_events: List[FenceCrossingEvent] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    # ── World-Border Model Extensions (Optional, backward-compatible) ──
+    border_side: Optional[BorderSide] = None
+    crossing_status: CrossingStatus = CrossingStatus.NONE
+    ground_contact: Optional[GroundContactPoint] = None
+    calibration_version: Optional[str] = None
+    spatial_confidence: SpatialConfidence = SpatialConfidence.VALID
 
 
 __all__ = [
@@ -54,4 +61,8 @@ __all__ = [
     "ZonePolygon",
     "VirtualFence",
     "CameraSpatialConfig",
+    "BorderSide",
+    "CrossingStatus",
+    "GroundContactPoint",
+    "SpatialConfidence",
 ]

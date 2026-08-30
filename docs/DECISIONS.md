@@ -63,3 +63,25 @@ This document tracks all formal architectural and engineering decisions made dur
   4. Non-leakage guarantee: Detector confidence is strictly documented and handled as model prediction confidence, completely decoupled from risk scoring and tracking persistence.
 - **Trade-offs:** Provides 22+ FPS CPU inference immediately without custom C++/CUDA compilation, while maintaining a pure interface enabling drop-in replacement of RF-DETR or ONNX models.
 - **Affected Components:** `worker/perception/`, `tests/unit/test_detector.py`, `tests/replay/test_detector_replay.py`, `scripts/benchmark_detector.py`.
+
+---
+
+## [DEC-0006] Replace Camera-Owned Pixel Fence with World-Owned Border Model
+- **Date:** 2026-08-30
+- **Status:** APPROVED IMPLEMENTATION DIRECTION
+- **Context:** The Phase 6 spatial engine defines virtual fences as manually placed pixel-coordinate line segments per camera. Each camera independently owns its fence definition with no shared world reference. When multiple cameras observe the same physical boundary, there is no semantic link between their pixel fences.
+- **Decision:**
+  1. Introduce a global world-space border model where ONE logical border definition exists as the source of truth.
+  2. Cameras do NOT define the logical border itself. Cameras define how they observe the border through calibrated projections.
+  3. Camera calibration uses explicit world-to-image point correspondences and planar homography for the prototype.
+  4. The projected border in each camera's image space is a DERIVED VIEW, not an independent configuration.
+  5. Ground-contact point (bottom-center of bounding box) is used to locate tracked objects in world space.
+  6. Side determination (permitted / buffer / restricted) and crossing detection are computed in world coordinates.
+  7. Crossing confirmation requires sustained multi-frame evidence, preventing jitter-induced false crossings.
+  8. The old pixel-fence model is preserved as `LEGACY_IMAGE_SPACE` fallback for uncalibrated cameras.
+  9. `TERRAIN_3D` mode is explicitly declared as NOT IMPLEMENTED; only `PLANAR_GROUND` is supported in the prototype.
+- **Trade-offs:**
+  - **Pro:** Scalability (new camera inherits existing border), semantic correctness (two cameras reference same boundary), consistent real-world representation.
+  - **Con:** Calibration complexity (requires world-image correspondences), camera registration overhead, uncertainty from non-planar terrain, homography limitations on hilly ground.
+- **Affected Components:** `worker/spatial/`, `backend/app/schemas/spatial.py`, `supabase/migrations/`, `configs/`, `docs/spatial_border_model.md`.
+

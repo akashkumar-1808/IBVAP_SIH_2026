@@ -654,28 +654,28 @@ dashboard
 
 ## Status
 
-**PHASE 7 COMPLETED — BEHAVIORAL ANALYTICS & TEMPORAL PATTERN ENGINE INITIALIZED**
+**PRE-PHASE 8 ARCHITECTURAL CORRECTION COMPLETED — WORLD-OWNED BORDER MODEL INITIALIZED**
 
-The Behavioral Analytics Engine, standard `BehaviorEngineInterface`, `BehaviorEngine` implementation, deterministic temporal detectors (`LoiteringDetector`, `ApproachDetector`, `OccupancyDetector`, `FenceBreachDetector`), explainable reason codes (`DWELL_TIME_EXCEEDED`, `LOW_DISPLACEMENT`, `PERSISTENT_TOWARD`, `RESTRICTED_OCCUPANCY`, `FENCE_CROSSED`, `REPEATED_APPROACH`), event de-duplication and cooldown management, unit test suite, deterministic replay test, and behavioral benchmark suite have been implemented and verified.
+The World-Owned Border Model, canonical world-space `BorderSection` representation, `CameraRegistration` and `CameraCalibration` subsystem (planar homography), derived `ProjectedBorder` generation, `estimate_ground_contact` point extraction (bottom-center approx), world-space `determine_side` classification (`PERMITTED`, `WARNING_BUFFER`, `BORDER_LINE`, `RESTRICTED`), multi-frame `CrossingConfirmation` with jitter rejection, backward-compatible `SpatialEngine` with legacy image-space fallback, 103 unit tests, replay test, and performance benchmark suite have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
 Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
-AI worker: PARTIALLY IMPLEMENTED (Ingestion + Perception + Tracking + Environment + Spatial + Behavior active)
+AI worker: PARTIALLY IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior active)
 Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
 Detector: IMPLEMENTED (ObjectDetector / DetectorInterface baseline active)
 Tracker: IMPLEMENTED (ByteTrackTracker / TrackerInterface baseline active)
 Environment engine: IMPLEMENTED (EnvironmentAnalyzer / Visual Quality Metrics active)
-Spatial engine: IMPLEMENTED (SpatialEngine / 2D Zone & Virtual Fence Reasoning active)
+Spatial engine: IMPLEMENTED (SpatialEngine / World-Owned Border Model & Calibrated Projection active)
 Behavior engine: IMPLEMENTED (BehaviorEngine / Temporal Pattern Reasoning active)
 Evidence fusion: PLANNED (Risk priority schemas defined; scheduled for Phase 8)
 Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (66 unit & replay tests active with pytest)
+Tests: IMPLEMENTED (103 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -1271,6 +1271,95 @@ Benchmark Measured Performance (CPU):
 
 Behavior primitives describe purely physical and temporal movement (e.g. loitering, approach); security risk scoring and threat level assignment are handled in Phase 8.
 
+---
+
+## [MEM-0011] World-Owned Border Model Architectural Correction Initialized
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-30
+
+### Change
+
+1. Updated documentation first:
+   - Created `docs/spatial_border_model.md` detailing global border hierarchy, border sections, camera registration, calibration, planar homography, ground-contact points, warning buffers, crossing confirmation, and flat vs. mountain terrain limitations.
+   - Recorded `[DEC-0006]` in `docs/DECISIONS.md`.
+2. Created world-space border schemas in `worker/spatial/world_schemas.py`:
+   - `CoordinateReference` (`LOCAL_CARTESIAN`, `GPS_WGS84`), `TerrainMode` (`PLANAR_GROUND`, `TERRAIN_3D`).
+   - `BorderSection`, `CameraRegistration`, `CameraCalibration`, `CalibrationCorrespondence`.
+   - `BorderSide` (`PERMITTED`, `WARNING_BUFFER`, `BORDER_LINE`, `RESTRICTED`, `UNKNOWN`), `CrossingStatus` (`NONE`, `CROSSING_CANDIDATE`, `CONFIRMED_CROSSING`).
+   - `GroundContactPoint`, `ProjectedBorder`, `CrossingEvent`.
+3. Created camera calibration subsystem in `worker/spatial/calibration.py`:
+   - `compute_homography(correspondences)` with OpenCV RANSAC and collinearity rejection.
+   - `project_world_to_image(world_point, H)` and `project_image_to_world(image_point, H_inv)`.
+   - `validate_calibration(calibration)` returning `CalibrationStatus` (`CALIBRATED`, `UNCALIBRATED`, `STALE`, `INVALID`).
+   - `project_border_to_camera(border_section, calibration)` computing derived `ProjectedBorder`.
+   - Explicit `TerrainModeNotImplementedError` when `TERRAIN_3D` is requested.
+4. Created ground-contact point extraction in `worker/spatial/ground_contact.py`:
+   - `estimate_ground_contact(track)` approximating bottom-center of bounding box for persons/vehicles with occlusion confidence flags.
+   - `image_to_world_ground(pixel_xy, H_inv)` mapping ground contact to local world coordinates.
+5. Created world-space border logic in `worker/spatial/border_logic.py`:
+   - `determine_side(world_point, border_section)` evaluating signed distance to border polyline relative to `permitted_side_normal`.
+   - `check_crossing(previous_side, current_side)` detecting candidate transitions.
+   - `CrossingConfirmation(confirmation_frames=N)` stateful multi-frame confirmation with jitter rejection.
+6. Refactored `SpatialEngine` in `worker/spatial/engine.py`:
+   - Dual-mode architecture: world-border mode for calibrated cameras, legacy image-space mode for uncalibrated cameras.
+   - Preserved `SpatialState` schema output contract for 100% backward compatibility with Phase 7 `BehaviorEngine`.
+7. Created database migration `supabase/migrations/20260830000000_border_calibration.sql` and example configuration `configs/border_config_example.yaml`.
+8. Created unit test suite in `tests/unit/test_world_border.py` (37 tests) and replay test in `tests/replay/test_border_replay.py`.
+9. Created performance benchmark in `scripts/benchmark_border.py`.
+
+### Purpose
+
+Transition spatial reasoning from camera-owned manual pixel fences to a single real-world border definition where cameras act as calibrated viewpoints.
+
+### Git commit
+
+```text
+Commit: [PENDING_COMMIT]
+Message: feat(spatial): implement world-owned border model, camera calibration, and crossing confirmation
+```
+
+### Verification
+
+```text
+Command: pytest tests/unit/
+Result: 103 passed in 15.55s (100% PASS)
+- tests/unit/test_world_border.py (37 passed)
+- tests/unit/test_spatial.py (8 passed)
+- tests/unit/test_behavior.py (6 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_environment_analyzer.py (7 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/unit/test_tracker.py (9 passed)
+
+Command: pytest tests/replay/test_border_replay.py
+Result: 1 passed in 22.78s (100% PASS)
+
+Benchmark Measured Performance (CPU):
+- Homography Computation (5 points): 0.0912 ms (reproj=0.0000px)
+- Border Polyline Projection (11 pts): 0.0789 ms
+- Ground-Contact Point Extraction: 0.00200 ms
+- Ground Pixel -> World Mapping: 0.00304 ms
+- Side Determination (Signed Dist): 0.00453 ms
+- Crossing Check & Confirmation: 0.00029 ms
+- End-to-End Mean Latency per Frame (20 tracks): 0.3562 ms
+- P95 Latency: 0.4364 ms
+- Effective Spatial Engine Throughput: 2,540.50 FPS (CPU)
+```
+
+### Known limitations
+
+1. Planar Homography Assumption: Flat ground assumption is valid for roads, fences, and flat terrain, but does not solve mountainous terrain (requires future TERRAIN_3D pose/elevation model).
+2. Ground-Contact Approximation: Bottom-center is an approximation and marked UNCERTAIN during occlusion.
+
 ### Next
 
 Phase 8: Multi-Modal Evidence Fusion & Risk Scoring Engine (`worker/fusion/`).
@@ -1283,9 +1372,9 @@ Phase 8: Multi-Modal Evidence Fusion & Risk Scoring Engine (`worker/fusion/`).
 
 ```text
 Branch: main
-HEAD: d6f00ce6b2e14277d547c680dd5c4a3b8859dc01
+HEAD: [PENDING_COMMIT]
 Working tree: clean
-Total Commits: 11
+Total Commits: 13
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
@@ -1297,6 +1386,8 @@ Total Commits: 11
 9. 30db6728c0abfe71e3c83d5890884f3d270c1d9c - docs(eval): capture Phase 5 perception anomalies and structured failure case corpus [MEM-0008]
 10. d90e27334d1409ee0d3e000e105aacbfc50f1d86 - feat(worker): implement Spatial Intelligence Engine, virtual fencing, and geometry tests
 11. d6f00ce6b2e14277d547c680dd5c4a3b8859dc01 - feat(worker): implement Behavioral Analytics Engine, temporal detectors, and replay tests
+12. 8812eb86dd0d9d28ab83217a3cdb5878591c632b - feat(scripts): upgrade pipeline runner to render Spatial Zones, Virtual Fences, and Behavior Badges
+13. [PENDING_COMMIT] - feat(spatial): implement world-owned border model, camera calibration, and crossing confirmation
 ```
 
 ---
@@ -1327,20 +1418,20 @@ Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ## 11.3 AI Worker
 
 ```text
-Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + Spatial + Behavior)
+Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior)
 Entry point: worker/
 Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
 Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
 Detector: ObjectDetector (YOLOv8n / PyTorch, DetectorInterface)
 Tracker: ByteTrackTracker (Kalman Filter + Linear Assignment, TrackerInterface)
 Environment: EnvironmentAnalyzer (Luminance, Contrast, Blur, Noise, Visibility Quality)
-Spatial: SpatialEngine (Point-in-Polygon, Virtual Fencing, Movement Direction)
+Spatial: SpatialEngine (World-Owned Border Model, Planar Homography, Ground-Contact Point, Side Determination, Crossing Confirmation)
 Behavior: BehaviorEngine (Loitering, Persistent Approach, Restricted Occupancy, Fence Breach)
 Fusion: PLANNED (Phase 8)
 Evidence: PLANNED (Phase 9)
 Known issues: None
-Last changed: 2026-08-28
-Commit: d6f00ce6b2e14277d547c680dd5c4a3b8859dc01
+Last changed: 2026-08-30
+Commit: [PENDING_COMMIT]
 ```
 
 ## 11.4 Detector

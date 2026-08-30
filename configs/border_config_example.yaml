@@ -1,0 +1,80 @@
+# ====================================================================
+# IBVAP — World Border Configuration Example
+# Architecture Decision: DEC-0006
+# ====================================================================
+#
+# This file demonstrates a prototype border configuration with:
+# - 1 border section in local Cartesian coordinates
+# - 2 cameras observing the same border from different positions
+# - 2 calibration profiles (4+ correspondences each)
+#
+# Coordinate system: LOCAL_CARTESIAN (metres, origin arbitrary)
+# Terrain model: PLANAR_GROUND (flat ground assumption)
+#
+# NOTE: No GPS/WGS84 coordinates are fabricated.
+#       All coordinates use a local project-specific reference frame.
+# ====================================================================
+
+border_sections:
+  - id: "section_alpha"
+    name: "Border Section Alpha — Training Ground Perimeter"
+    coordinate_reference: "local_cartesian"
+    terrain_mode: "planar_ground"
+    version: "1.0"
+    # Border polyline in world coordinates (metres from local origin)
+    # Runs roughly from (0, 50) to (100, 50) — a straight east-west line
+    points:
+      - { x: 0.0, y: 50.0 }
+      - { x: 25.0, y: 50.0 }
+      - { x: 50.0, y: 50.0 }
+      - { x: 75.0, y: 50.0 }
+      - { x: 100.0, y: 50.0 }
+    # Normal vector pointing toward the permitted (friendly) side
+    # (0, 1) means the permitted side is in the +Y direction (north)
+    permitted_side_normal: [0.0, 1.0]
+    # Warning buffer distance in world units (metres)
+    warning_buffer_distance: 5.0
+
+cameras:
+  # Camera 1 — looks at the border from the northwest, border appears diagonal
+  - camera_id: "cam_north_01"
+    registration:
+      visible_border_sections: ["section_alpha"]
+      height_meters: 4.5
+      orientation_deg: 135.0  # Facing southeast
+    calibration:
+      image_width: 1920
+      image_height: 1080
+      calibration_model: "planar_homography"
+      calibration_version: "1.0"
+      # World (metres) ↔ Image (pixels) correspondences
+      correspondences:
+        - world_point: { x: 0.0, y: 50.0 }
+          image_point: [200, 600]
+        - world_point: { x: 100.0, y: 50.0 }
+          image_point: [1700, 400]
+        - world_point: { x: 0.0, y: 0.0 }
+          image_point: [100, 900]
+        - world_point: { x: 100.0, y: 0.0 }
+          image_point: [1800, 800]
+
+  # Camera 2 — looks at the border from the south, border appears nearly horizontal
+  - camera_id: "cam_south_02"
+    registration:
+      visible_border_sections: ["section_alpha"]
+      height_meters: 3.0
+      orientation_deg: 0.0  # Facing north
+    calibration:
+      image_width: 1280
+      image_height: 720
+      calibration_model: "planar_homography"
+      calibration_version: "1.0"
+      correspondences:
+        - world_point: { x: 0.0, y: 50.0 }
+          image_point: [100, 200]
+        - world_point: { x: 100.0, y: 50.0 }
+          image_point: [1180, 200]
+        - world_point: { x: 0.0, y: 0.0 }
+          image_point: [50, 700]
+        - world_point: { x: 100.0, y: 0.0 }
+          image_point: [1230, 700]

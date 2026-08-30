@@ -49,6 +49,14 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(api_router, prefix=settings.API_V1_STR)
 
+    # Mount compiled React Operator Console if dist exists
+    import os
+    from fastapi.staticfiles import StaticFiles
+
+    dist_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+    if os.path.exists(dist_dir):
+        app.mount("/console", StaticFiles(directory=dist_dir, html=True), name="console")
+
     @app.get("/", tags=["Root"])
     async def root():
         return {
@@ -56,6 +64,7 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "environment": settings.ENVIRONMENT,
             "docs_url": "/docs",
+            "console_url": "/console",
         }
 
     return app

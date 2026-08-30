@@ -108,3 +108,31 @@ def get_evidence_signed_url(evidence_id: str, expires_in_seconds: int = 3600):
         "signed_url": signed_url,
         "local_storage_reference": storage_ref,
     }
+
+
+@router.get("/{evidence_id}/file")
+def get_evidence_file(evidence_id: str):
+    """
+    Directly streams physical evidence media (snapshot/video/manifest) to the browser.
+    """
+    from fastapi.responses import FileResponse
+
+    rec = evidence_repo.get_by_id(evidence_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Evidence record '{evidence_id}' not found.")
+
+    storage_ref = rec.get("storage_reference", "")
+    if not os.path.exists(storage_ref):
+        raise HTTPException(status_code=404, detail=f"Evidence file not found on disk at '{storage_ref}'.")
+
+    ext = os.path.splitext(storage_ref)[1].lower()
+    media_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".mp4": "video/mp4",
+        ".json": "application/json",
+    }
+    media_type = media_types.get(ext, "application/octet-stream")
+
+    return FileResponse(path=storage_ref, media_type=media_type, filename=os.path.basename(storage_ref))

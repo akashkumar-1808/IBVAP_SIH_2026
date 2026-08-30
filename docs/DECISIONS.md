@@ -160,3 +160,22 @@ This document tracks all formal architectural and engineering decisions made dur
   - **Con:** OpenCV GUI windows require desktop display context in `--visual` mode; `--headless` is default for headless server deployments.
 - **Affected Components:** `worker/pipeline/`, `scripts/run_live_mvp.py`, `tests/integration/test_live_pipeline.py`, `docs/IBVAP_memory.md`.
 
+---
+
+## [DEC-0011] Phase 10: React MVP Operator Console and Intelligence Streaming Architecture
+- **Date:** 2026-08-30
+- **Status:** APPROVED
+- **Context:** An operations console is required to present real-time multi-stage intelligence (perception, tracking, spatial world-border analysis, temporal behavior, sector normality, evidence-on-demand, and cryptographic evidence packages) directly to the jury.
+- **Decision:**
+  1. **Visual Style**: Adopt a Dark Modern Command Console design matching the operational visual concept (deep charcoal `#080a0f`, slate panels `#0f131a`, cyan `#06b6d4` operational accents, amber `#f59e0b` warning buffers, red `#ef4444` restricted breaches, off-white text `#f8fafc`).
+  2. **Zero Mock AI**: The UI connects to real backend REST APIs (`/api/v1/cameras`, `/api/v1/events`, `/api/v1/evidence`, `/api/v1/scenarios`) and a high-frequency WebSocket (`/api/v1/ws/telemetry`). No frontend simulated AI logic.
+  3. **Video Delivery**: FastAPI MJPEG stream bridge (`/api/v1/streams/{camera_id}/live`) delivers real-time frames with SVG HUD overlays for projected world borders, buffer zones, tracks, ground contact points, trajectory trails, and floating track intelligence cards.
+  4. **Why This Event? Explainability**: The operator console explicitly exposes backend reason codes (e.g. `PERSISTENT_TRACK_ESTABLISHED`, `MOVEMENT_TOWARD_PROTECTED_REGION`, `BORDER_LINE_CROSSED`, `RESTRICTED_ZONE_OCCUPANCY`, `CROSS_CAMERA_CORROBORATION`) to make detection-to-decision logic 100% explainable.
+  5. **Deterministic Jury Replay Controller**: Scenario controller (`/api/v1/scenarios`) enables instant one-click demonstration of deterministic intrusion, shadow false-positive suppression, and multi-camera border track handoffs.
+  6. **Static Dist Serving**: Production build (`frontend/dist/`) is served directly at `/console` via FastAPI `StaticFiles`.
+- **Trade-offs:**
+  - **Pro:** Complete transparency and explainability; zero mock AI; high performance; responsive command room visual feel.
+  - **Con:** Multi-camera live streams share browser connections; optimized with MJPEG + WebSocket pub/sub.
+- **Affected Components:** `frontend/`, `backend/app/api/routes/`, `backend/app/main.py`, `docs/IBVAP_memory.md`.
+
+

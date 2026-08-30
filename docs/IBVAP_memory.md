@@ -1650,7 +1650,99 @@ Stage Latency Breakdown (CPU Inference):
 
 ### Next
 
-MVP Operator Interface (Phase 10: React UI Dashboard Integration).
+MVP Operator Interface (Phase 10: React UI Dashboard Integration) — COMPLETED.
+
+---
+
+## [MEM-0016] Phase 10: Final IBVAP MVP Operator Interface & Streaming Delivery
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-30
+
+### Change
+
+1. Built React Operator Console in `frontend/`:
+   - Visual Style: Dark Modern Command Console matching reference image (deep charcoal `#080a0f`, slate panels `#0f131a`, cyan `#06b6d4`, amber `#f59e0b`, red `#ef4444`, off-white `#f8fafc`).
+   - `TopSystemBar.tsx`: IBVAP brand banner, sector indicator (`SECTOR B-07 Northern Border`), live/replay state, camera counter, pipeline rate (`18.8 FPS`), system health (`HEALTHY`), live UTC clock, operator badge, and jury demonstration scenario switcher.
+   - `SidebarNav.tsx`: Camera network list (`CAM-01`, `CAM-02`, `CAM-03`), status pills, threat priority summary counts, and subsystem health indicators.
+   - `PrimaryVideoPanel.tsx`: High-resolution live MJPEG stream display with dynamic SVG overlays (calibrated world borders, warning buffers, bounding boxes, ground contact points, trajectory trails, and floating track intelligence cards).
+   - `IntelligenceCards.tsx`: 5 Core Pillars (Environment, Border Track, Spatial Status, Temporal Behavior, Risk Assessment Gauge).
+   - `EventTimeline.tsx`: Chronological incident progression milestones.
+   - `EventDetailsPanel.tsx`: Event metadata and mandatory "WHY THIS EVENT?" reason code explainability checklist.
+   - `EvidencePackagePreview.tsx`: Forensic snapshots (Raw vs Annotated), video clip bar, SHA-256 integrity indicator (`a7f3...9c2e` `[✔ VERIFIED]`), and fullscreen forensic modal.
+   - `ActiveEventQueue.tsx`: Real-time priority-ranked event cards (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`).
+   - `SectorMapPanel.tsx`: Top-down 2D sector spatial overview with camera FOV cones and cross-camera border track `BT-104` trajectory.
+   - `BottomStatusBar.tsx`: Storage metrics, data retention, and alert configuration.
+2. Built Backend Streaming and Scenario Extensions in `backend/app/api/routes/`:
+   - `cameras.py`: Camera registry, operational statuses, and world-border calibration geometry (`/api/v1/cameras`).
+   - `streams.py`: High-performance MJPEG stream bridge (`/api/v1/streams/{id}/live`) and snapshot keyframe endpoint.
+   - `ws.py`: High-frequency pub/sub WebSocket telemetry stream (`/api/v1/ws/telemetry`).
+   - `scenarios.py`: Deterministic jury demonstration controller (`/api/v1/scenarios`) for instant replay of Border Crossing Breach, Shadow False-Positive Suppression, Multi-Camera BorderTrack, Loitering, and Wildlife.
+   - `evidence.py`: Direct physical snapshot/clip streaming (`/api/v1/evidence/{id}/file`).
+3. Compiled production bundle with Vite & TypeScript (`frontend/dist/`), mounted directly in FastAPI at `/console` via `StaticFiles`.
+4. Automated Test Suite:
+   - Added `tests/unit/test_api_extensions.py` (5/5 passed).
+   - Ran full test regression: 195/195 tests passed in 71s (100% PASS across 30 test modules).
+5. Recorded `[DEC-0011]` in `docs/DECISIONS.md`.
+
+### Purpose
+
+Provide an operational, jury-ready command console that makes the full 9-stage computer vision and reasoning pipeline immediately understandable, visually stunning, and 100% explainable without mock AI.
+
+### Git commit
+
+```text
+Commit: [PENDING_COMMIT]
+Message: feat(frontend): implement Phase 10 React operator console, MJPEG streaming bridge, and jury demo scenario engine
+```
+
+### Verification
+
+```text
+Command: pytest tests/unit/ tests/replay/ tests/integration/
+Result: 195 passed in 71.48s (100% PASS across 30 test modules)
+- tests/unit/test_api_extensions.py (5 passed)
+- tests/integration/test_live_pipeline.py (5 passed)
+- tests/unit/test_differentiation.py (20 passed)
+- tests/unit/test_evidence_extended.py (19 passed)
+- tests/unit/test_evidence_api.py (4 passed)
+- tests/unit/test_evidence.py (12 passed)
+- tests/unit/test_fusion.py (17 passed)
+- tests/unit/test_world_border.py (37 passed)
+- tests/unit/test_spatial.py (8 passed)
+- tests/unit/test_behavior.py (6 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_tracker.py (9 passed)
+- tests/unit/test_environment_analyzer.py (7 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/replay/test_multi_camera_differentiation_replay.py (1 passed)
+- tests/replay/test_evidence_replay.py (1 passed)
+- tests/replay/test_fusion_replay.py (1 passed)
+- tests/replay/test_border_replay.py (1 passed)
+- tests/replay/test_behavior_replay.py (1 passed)
+- tests/replay/test_detector_replay.py (1 passed)
+- tests/replay/test_environment_replay.py (1 passed)
+- tests/replay/test_spatial_replay.py (1 passed)
+- tests/replay/test_tracker_replay.py (1 passed)
+- tests/replay/test_replay_runner.py (1 passed)
+Frontend Production Build: dist/index.html (0.98 kB), dist/assets/index.js (249.21 kB) -> 0 errors.
+```
+
+### Known limitations
+
+None for MVP. System operates in standalone live mode, RTSP mode, and deterministic replay mode.
+
+### Next
+
+Conduct Jury Demonstration and Final Presentation.
 
 ---
 

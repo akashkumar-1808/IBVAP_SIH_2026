@@ -1405,7 +1405,7 @@ Provide an automated, non-repudiable, tamper-evident evidence packaging pipeline
 ### Git commit
 
 ```text
-Commit: [PENDING_COMMIT]
+Commit: 9847136f0cce56e091964490f2a772a3a2d475a8
 Message: feat(backend): complete Phase 9 Evidence Packaging, REST API, verification, and database integration
 ```
 

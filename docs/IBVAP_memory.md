@@ -1316,7 +1316,7 @@ Transition spatial reasoning from camera-owned manual pixel fences to a single r
 ### Git commit
 
 ```text
-Commit: [PENDING_COMMIT]
+Commit: de8c30e9e2864de12d79f454baf53501ce46242a
 Message: feat(spatial): implement world-owned border model, camera calibration, and crossing confirmation
 ```
 
@@ -1372,7 +1372,7 @@ Phase 8: Multi-Modal Evidence Fusion & Risk Scoring Engine (`worker/fusion/`).
 
 ```text
 Branch: main
-HEAD: [PENDING_COMMIT]
+HEAD: de8c30e9e2864de12d79f454baf53501ce46242a
 Working tree: clean
 Total Commits: 13
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
@@ -1387,7 +1387,7 @@ Total Commits: 13
 10. d90e27334d1409ee0d3e000e105aacbfc50f1d86 - feat(worker): implement Spatial Intelligence Engine, virtual fencing, and geometry tests
 11. d6f00ce6b2e14277d547c680dd5c4a3b8859dc01 - feat(worker): implement Behavioral Analytics Engine, temporal detectors, and replay tests
 12. 8812eb86dd0d9d28ab83217a3cdb5878591c632b - feat(scripts): upgrade pipeline runner to render Spatial Zones, Virtual Fences, and Behavior Badges
-13. [PENDING_COMMIT] - feat(spatial): implement world-owned border model, camera calibration, and crossing confirmation
+13. de8c30e9e2864de12d79f454baf53501ce46242a - feat(spatial): implement world-owned border model, camera calibration, and crossing confirmation
 ```
 
 ---
@@ -1431,7 +1431,7 @@ Fusion: PLANNED (Phase 8)
 Evidence: PLANNED (Phase 9)
 Known issues: None
 Last changed: 2026-08-30
-Commit: [PENDING_COMMIT]
+Commit: de8c30e9e2864de12d79f454baf53501ce46242a
 ```
 
 ## 11.4 Detector

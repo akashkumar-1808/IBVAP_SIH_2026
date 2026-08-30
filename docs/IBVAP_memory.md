@@ -1404,7 +1404,7 @@ Provide an automated, non-repudiable, tamper-evident evidence packaging pipeline
 ### Git commit
 
 ```text
-Commit: [PENDING_COMMIT]
+Commit: 1e3d2c548ab27c6052d25ec661366cefafa275df
 Message: feat(worker): implement Structured Evidence Storage & Packaging subsystem, SHA-256 sealing, and replay tests
 ```
 
@@ -1466,7 +1466,7 @@ Phase 10: System Integration & Worker Pipeline Orchestration.
 
 ```text
 Branch: main
-HEAD: [PENDING_COMMIT]
+HEAD: 1e3d2c548ab27c6052d25ec661366cefafa275df
 Working tree: clean
 Total Commits: 17
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
@@ -1485,7 +1485,7 @@ Total Commits: 17
 14. b1fb40e4deed1b4ca3909fd5e6bf07f357269250 - feat(scripts): add multi-camera world border coordination test and visualizer
 15. 7672d063c5a1c8d2f89668fa994555ade8dccd1f - feat(worker): implement Multi-Modal Evidence Fusion Engine, risk scoring, and replay tests
 16. 30b2c782b0679e2fb594512b33bc7b2d9b2890c8 - docs: record Phase 8 Multi-Modal Evidence Fusion baseline [MEM-0012]
-17. [PENDING_COMMIT] - feat(worker): implement Structured Evidence Storage & Packaging subsystem, SHA-256 sealing, and replay tests
+17. 1e3d2c548ab27c6052d25ec661366cefafa275df - feat(worker): implement Structured Evidence Storage & Packaging subsystem, SHA-256 sealing, and replay tests
 ```
 
 ---
@@ -1529,7 +1529,7 @@ Fusion: FusionEngine (Multi-Modal Evidence Fusion, Weighted Risk Scoring, Event 
 Evidence: EvidencePackager (Rolling Frame Buffer, JPEG Snapshots, MP4 Clips, SHA-256 Cryptographic Sealing, Local & Cloud Storage)
 Known issues: None
 Last changed: 2026-08-30
-Commit: [PENDING_COMMIT]
+Commit: 1e3d2c548ab27c6052d25ec661366cefafa275df
 ```
 
 ## 11.4 Detector

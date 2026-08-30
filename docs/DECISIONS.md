@@ -104,4 +104,24 @@ This document tracks all formal architectural and engineering decisions made dur
   - **Con:** Requires explicit threshold and weight configuration; learned multi-modal weights can be researched in future phases.
 - **Affected Components:** `worker/fusion/`, `backend/app/schemas/events.py`, `docs/IBVAP_Architecture.md`, `docs/IBVAP_memory.md`.
 
+---
+
+## [DEC-0008] Structured Evidence Storage & Cryptographic Packaging Architecture
+- **Date:** 2026-08-30
+- **Status:** APPROVED
+- **Context:** Actionable `EventRecord`s produced by the Phase 8 Fusion Engine must be sealed with immutable forensic evidence (raw and annotated keyframe snapshots, pre-event and incident video clips, and audit manifests) to satisfy court-admissible legal chain of custody and non-repudiation requirements.
+- **Decision:**
+  1. Implement `EvidencePackager` behind `EvidencePackagerInterface` in `worker/evidence/`.
+  2. Rolling Frame Ring Buffer (`RollingFrameBuffer`): Maintain a lightweight in-memory ring buffer of recent frames per camera (bounded by `(pre_event_seconds + post_event_seconds + 10) * fps`) allowing instant zero-latency extraction of pre-event context without re-querying disk or video streams.
+  3. Forensic Snapshots: Save raw uncompressed/high-quality JPEG keyframes along with forensic HUD-annotated keyframes (containing top metadata banner, bounding boxes, ground-contact points, and projected world borders).
+  4. Video Clips: Compile chronological MP4 video clips for pre-event (e.g. 5s buffer preceding intrusion) and incident duration.
+  5. Cryptographic Sealing: Compute hex-encoded SHA-256 hashes of all media artifacts and embed them in an immutable `manifest.json`. The package itself is sealed with the manifest's SHA-256 hash.
+  6. Tamper Verification: Provide `verify_package()` which checks all artifact checksums against the manifest to detect any byte alterations.
+  7. Dual Storage Mode: Write packages to structured local directories (`storage/evidence/{camera_id}/{event_id}/`) with optional, non-blocking asynchronous cloud upload to Supabase Storage.
+- **Trade-offs:**
+  - **Pro:** Complete forensic chain of custody, tamper-evident, non-blocking to perception pipelines, deterministic verification.
+  - **Con:** Memory overhead for ring buffers (bounded to ~10–15s per camera) and disk storage for high-quality MP4 clips.
+- **Affected Components:** `worker/evidence/`, `worker/spatial/engine.py`, `backend/app/db/storage.py`, `docs/IBVAP_memory.md`.
+
+
 

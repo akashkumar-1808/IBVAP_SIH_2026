@@ -544,13 +544,26 @@ class SpatialEngine(SpatialEngineInterface):
 
         return current_zone_id, current_zone_type, transition, fences_crossed, crossing_events, direction
 
-    # ── Existing Interface Methods ────────────────────────────────────────
-
     def get_spatial_state(self, camera_id: str, track_id: int) -> Optional[SpatialState]:
         camera_map = self._track_states.get(camera_id)
         if camera_map and track_id in camera_map:
             return camera_map[track_id].last_state
         return None
+
+    def get_projected_borders(self, camera_id: str) -> List[ProjectedBorder]:
+        """Returns projected border polylines for the specified camera."""
+        if camera_id not in self._camera_registrations or camera_id not in self._homography_matrices or camera_id not in self._camera_calibrations:
+            return []
+        H = self._homography_matrices[camera_id]
+        calib = self._camera_calibrations[camera_id]
+        registration = self._camera_registrations[camera_id]
+        projected: List[ProjectedBorder] = []
+        for sec_id in registration.visible_border_sections:
+            if sec_id in self._border_sections:
+                sec = self._border_sections[sec_id]
+                pb = project_border_to_camera(sec, calib, H)
+                projected.append(pb)
+        return projected
 
     def reset(self, camera_id: Optional[str] = None) -> None:
         if camera_id:

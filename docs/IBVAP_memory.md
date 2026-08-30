@@ -654,16 +654,16 @@ dashboard
 
 ## Status
 
-**PHASE 8 COMPLETED — MULTI-MODAL EVIDENCE FUSION & EVENT INTELLIGENCE INITIALIZED**
+**PHASE 9 COMPLETED — STRUCTURED EVIDENCE STORAGE & PACKAGING INITIALIZED**
 
-The Multi-Modal Evidence Fusion Engine, standard `FusionEngineInterface`, `FusionEngine` implementation, normalized `EvidenceItem` and `EvidenceExtractor` subsystem, transparent weighted risk scoring $[0, 100]$, discrete `EventPriority` tiers (`INFO`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), stateful event lifecycle (`CANDIDATE` $\rightarrow$ `ACTIVE` $\rightarrow$ `RESOLVED`), multi-frame deduplication and cooldown management, calibration/environmental uncertainty safeguards, factual human-readable explanation generator, unit test suite (17 tests), deterministic replay test, and fusion performance benchmark suite have been implemented and verified.
+The Structured Evidence Storage & Packaging Subsystem, standard `EvidencePackagerInterface`, `EvidencePackager` orchestrator, `RollingFrameBuffer` pre-event ring buffer, raw & forensic HUD-annotated `SnapshotExtractor`, `ClipPackager` MP4 compilation, `EvidenceHasher` SHA-256 cryptographic sealing & tamper verification, `EvidenceStorageManager` local & Supabase storage abstraction, unit test suite (12 tests), deterministic replay test, and packaging benchmark suite have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
 Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
-AI worker: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior + Evidence Fusion)
+AI worker: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior + Evidence Fusion + Evidence Packaging)
 Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
 Detector: IMPLEMENTED (ObjectDetector / DetectorInterface baseline active)
 Tracker: IMPLEMENTED (ByteTrackTracker / TrackerInterface baseline active)
@@ -671,11 +671,11 @@ Environment engine: IMPLEMENTED (EnvironmentAnalyzer / Visual Quality Metrics ac
 Spatial engine: IMPLEMENTED (SpatialEngine / World-Owned Border Model & Calibrated Projection active)
 Behavior engine: IMPLEMENTED (BehaviorEngine / Temporal Pattern Reasoning active)
 Evidence fusion: IMPLEMENTED (FusionEngine / Multi-Modal Evidence Fusion & Risk Scoring active)
-Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
+Evidence storage: IMPLEMENTED (EvidencePackager / SHA-256 Cryptographic Sealing & Supabase Storage active)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (128 unit & replay tests active with pytest)
+Tests: IMPLEMENTED (141 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -1359,9 +1359,104 @@ Benchmark Measured Performance (CPU):
 1. Prototype Weights: Initial weights are configuration-driven defaults and should be empirically tuned with field operational datasets.
 2. Optional Intelligence: ANPR and FRS remain decoupled optional plugins for future phases.
 
+---
+
+## [MEM-0013] Phase 9 — Structured Evidence Storage & Packaging Initialized
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-30
+
+### Change
+
+1. Created domain exceptions in `worker/evidence/exceptions.py`:
+   - `EvidenceError`, `BufferUnderflowError`, `EncodingError`, `IntegrityVerificationError`, `StorageError`.
+2. Created data contracts and schemas in `worker/evidence/schemas.py`:
+   - `EvidenceStatus` enum: `RECORDING`, `PACKAGED`, `SEALED`, `STORED`, `FAILED`.
+   - `EvidencePackageConfig`: configurable pre/post durations, snapshot JPEG quality, target FPS, and storage directories.
+   - `ArtifactChecksum`: cryptographic SHA-256 fingerprint for individual media artifacts.
+   - `EvidenceManifest`: immutable audit manifest linking event details, target class, risk score, priority, reason codes, artifact hashes, and seal timestamps.
+   - `EvidencePackage`: complete package schema containing physical paths, audit manifest, and SHA-256 seal.
+3. Created continuous pre-event ring buffer in `worker/evidence/buffer.py`:
+   - `RollingFrameBuffer` with bounded memory deque and thread-safe operations.
+   - Zero-latency time-window retrieval `get_window(start_utc, end_utc)` and `get_pre_event_frames()`.
+4. Created snapshot extraction and forensic HUD annotation in `worker/evidence/snapshot.py`:
+   - `SnapshotExtractor.save_raw_snapshot()`: high-quality clean JPEG keyframe.
+   - `SnapshotExtractor.save_annotated_snapshot()`: renders top forensic metadata banner, target bounding boxes, ground-contact points, and projected world borders.
+5. Created video clip compilation in `worker/evidence/clip.py`:
+   - `ClipPackager.encode_clip()`: compiles chronological buffered frames into standard MP4 files.
+6. Created cryptographic sealing and verification engine in `worker/evidence/hasher.py`:
+   - `EvidenceHasher.hash_file()`, `create_artifact_checksum()`, and `verify_package_integrity()`.
+7. Created storage manager in `worker/evidence/storage.py`:
+   - Local directory hierarchy (`storage/evidence/{camera_id}/{event_id}/`) and manifest serialization.
+   - Optional asynchronous non-blocking cloud upload to Supabase Storage `evidence` bucket.
+8. Created production orchestrator in `worker/evidence/packager.py`:
+   - Implemented `EvidencePackagerInterface` managing multi-camera ring buffers, snapshot extraction, clip compilation, manifest sealing, and verification.
+9. Added `get_projected_borders` helper to `SpatialEngine` in `worker/spatial/engine.py`.
+10. Created unit tests in `tests/unit/test_evidence.py` (12 tests) and deterministic replay test in `tests/replay/test_evidence_replay.py`.
+11. Created performance benchmark in `scripts/benchmark_evidence.py`.
+12. Registered `[DEC-0008]` in `docs/DECISIONS.md`.
+
+### Purpose
+
+Provide an automated, non-repudiable, tamper-evident evidence packaging pipeline satisfying legal chain of custody requirements for all high-priority security incidents.
+
+### Git commit
+
+```text
+Commit: [PENDING_COMMIT]
+Message: feat(worker): implement Structured Evidence Storage & Packaging subsystem, SHA-256 sealing, and replay tests
+```
+
+### Verification
+
+```text
+Command: pytest tests/unit/ tests/replay/
+Result: 141 passed in 18.56s (100% PASS)
+- tests/unit/test_evidence.py (12 passed)
+- tests/unit/test_fusion.py (17 passed)
+- tests/unit/test_world_border.py (37 passed)
+- tests/unit/test_spatial.py (8 passed)
+- tests/unit/test_behavior.py (6 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_tracker.py (9 passed)
+- tests/unit/test_environment_analyzer.py (7 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/replay/test_evidence_replay.py (1 passed)
+- tests/replay/test_fusion_replay.py (1 passed)
+- tests/replay/test_border_replay.py (1 passed)
+- tests/replay/test_behavior_replay.py (1 passed)
+- tests/replay/test_detector_replay.py (1 passed)
+- tests/replay/test_environment_replay.py (1 passed)
+- tests/replay/test_spatial_replay.py (1 passed)
+- tests/replay/test_tracker_replay.py (1 passed)
+- tests/replay/test_replay_runner.py (1 passed)
+
+Benchmark Measured Performance (CPU):
+- Ring Buffer Frame Push Latency: 0.08668 ms (per frame, including copy)
+- Time-Window Slice Retrieval Latency: 0.01924 ms
+- Raw Snapshot JPEG Encoding Latency: 1.385 ms (640x480 @ Q=95)
+- Forensic HUD Annotated JPEG Latency: 3.034 ms
+- MP4 Clip Encoding Latency (50 frames): 41.513 ms (1,204.4 FPS encoding speed)
+- Cryptographic SHA-256 Sealing Latency: 0.4268 ms (per artifact pair)
+- Full Package Assembly & Sealing Throughput: 5.16 packages/sec on CPU
+```
+
+### Known limitations
+
+1. Memory Overhead: High-FPS multiple cameras require memory sizing for uncompressed frame ring buffers (e.g. 15s at 25fps = 375 frames ~ 345MB per camera).
+2. Video Codec: Standard OpenCV `mp4v` is used for immediate portability without requiring external FFmpeg binaries.
+
 ### Next
 
-Phase 9: Structured Evidence Storage & Packaging Subsystem (`worker/evidence/`).
+Phase 10: System Integration & Worker Pipeline Orchestration.
 
 ---
 
@@ -1371,9 +1466,9 @@ Phase 9: Structured Evidence Storage & Packaging Subsystem (`worker/evidence/`).
 
 ```text
 Branch: main
-HEAD: 7672d063c5a1c8d2f89668fa994555ade8dccd1f
+HEAD: [PENDING_COMMIT]
 Working tree: clean
-Total Commits: 15
+Total Commits: 17
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
@@ -1389,6 +1484,8 @@ Total Commits: 15
 13. de8c30e9e2864de12d79f454baf53501ce46242a - feat(spatial): implement world-owned border model, camera calibration, and crossing confirmation
 14. b1fb40e4deed1b4ca3909fd5e6bf07f357269250 - feat(scripts): add multi-camera world border coordination test and visualizer
 15. 7672d063c5a1c8d2f89668fa994555ade8dccd1f - feat(worker): implement Multi-Modal Evidence Fusion Engine, risk scoring, and replay tests
+16. 30b2c782b0679e2fb594512b33bc7b2d9b2890c8 - docs: record Phase 8 Multi-Modal Evidence Fusion baseline [MEM-0012]
+17. [PENDING_COMMIT] - feat(worker): implement Structured Evidence Storage & Packaging subsystem, SHA-256 sealing, and replay tests
 ```
 
 ---
@@ -1419,7 +1516,7 @@ Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ## 11.3 AI Worker
 
 ```text
-Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior + Evidence Fusion)
+Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior + Evidence Fusion + Evidence Packaging)
 Entry point: worker/
 Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
 Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
@@ -1429,10 +1526,10 @@ Environment: EnvironmentAnalyzer (Luminance, Contrast, Blur, Noise, Visibility Q
 Spatial: SpatialEngine (World-Owned Border Model, Planar Homography, Ground-Contact Point, Side Determination, Crossing Confirmation)
 Behavior: BehaviorEngine (Loitering, Persistent Approach, Restricted Occupancy, Fence Breach)
 Fusion: FusionEngine (Multi-Modal Evidence Fusion, Weighted Risk Scoring, Event Deduplication, Priority Tiers)
-Evidence: PLANNED (Phase 9)
+Evidence: EvidencePackager (Rolling Frame Buffer, JPEG Snapshots, MP4 Clips, SHA-256 Cryptographic Sealing, Local & Cloud Storage)
 Known issues: None
 Last changed: 2026-08-30
-Commit: 7672d063c5a1c8d2f89668fa994555ade8dccd1f
+Commit: [PENDING_COMMIT]
 ```
 
 ## 11.4 Detector

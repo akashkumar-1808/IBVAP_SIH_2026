@@ -1371,11 +1371,11 @@ Benchmark Measured Performance (CPU):
 
 1. Created domain exceptions in `worker/evidence/exceptions.py`:
    - `EvidenceError`, `BufferUnderflowError`, `EncodingError`, `IntegrityVerificationError`, `StorageError`.
-2. Created data contracts and schemas in `worker/evidence/schemas.py`:
-   - `EvidenceStatus` enum: `RECORDING`, `PACKAGED`, `SEALED`, `STORED`, `FAILED`.
+2. Created data contracts and schemas in `worker/evidence/schemas.py` and `backend/app/schemas/evidence.py`:
+   - `EvidenceStatus` enum: `RECORDING`, `PACKAGED`, `SEALED`, `PARTIAL`, `STORED`, `FAILED`.
    - `EvidencePackageConfig`: configurable pre/post durations, snapshot JPEG quality, target FPS, and storage directories.
    - `ArtifactChecksum`: cryptographic SHA-256 fingerprint for individual media artifacts.
-   - `EvidenceManifest`: immutable audit manifest linking event details, target class, risk score, priority, reason codes, artifact hashes, and seal timestamps.
+   - `EvidenceManifest`: immutable audit manifest linking event details, target class, risk score, priority, reason codes, model versions, artifact hashes, and seal timestamps.
    - `EvidencePackage`: complete package schema containing physical paths, audit manifest, and SHA-256 seal.
 3. Created continuous pre-event ring buffer in `worker/evidence/buffer.py`:
    - `RollingFrameBuffer` with bounded memory deque and thread-safe operations.
@@ -1392,10 +1392,11 @@ Benchmark Measured Performance (CPU):
    - Optional asynchronous non-blocking cloud upload to Supabase Storage `evidence` bucket.
 8. Created production orchestrator in `worker/evidence/packager.py`:
    - Implemented `EvidencePackagerInterface` managing multi-camera ring buffers, snapshot extraction, clip compilation, manifest sealing, and verification.
-9. Added `get_projected_borders` helper to `SpatialEngine` in `worker/spatial/engine.py`.
-10. Created unit tests in `tests/unit/test_evidence.py` (12 tests) and deterministic replay test in `tests/replay/test_evidence_replay.py`.
-11. Created performance benchmark in `scripts/benchmark_evidence.py`.
-12. Registered `[DEC-0008]` in `docs/DECISIONS.md`.
+9. Added database migration `supabase/migrations/20260830100000_evidence_records.sql` and repository `backend/app/db/repositories/evidence.py`.
+10. Implemented REST API routes in `backend/app/api/routes/events.py` and `backend/app/api/routes/evidence.py` (`GET /events`, `GET /events/{id}/evidence`, `GET /evidence/{id}/verify`).
+11. Created unit tests in `tests/unit/test_evidence.py` (12 tests), `tests/unit/test_evidence_extended.py` (19 tests), `tests/unit/test_evidence_api.py` (4 tests), and deterministic replay test in `tests/replay/test_evidence_replay.py`.
+12. Created manual verification demo in `scripts/verify_real_evidence_package.py` and performance benchmark in `scripts/benchmark_evidence.py`.
+13. Registered `[DEC-0008]` in `docs/DECISIONS.md`.
 
 ### Purpose
 
@@ -1404,16 +1405,18 @@ Provide an automated, non-repudiable, tamper-evident evidence packaging pipeline
 ### Git commit
 
 ```text
-Commit: 1e3d2c548ab27c6052d25ec661366cefafa275df
-Message: feat(worker): implement Structured Evidence Storage & Packaging subsystem, SHA-256 sealing, and replay tests
+Commit: [PENDING_COMMIT]
+Message: feat(backend): complete Phase 9 Evidence Packaging, REST API, verification, and database integration
 ```
 
 ### Verification
 
 ```text
 Command: pytest tests/unit/ tests/replay/
-Result: 141 passed in 18.56s (100% PASS)
+Result: 164 passed in 19.69s (100% PASS)
 - tests/unit/test_evidence.py (12 passed)
+- tests/unit/test_evidence_extended.py (19 passed)
+- tests/unit/test_evidence_api.py (4 passed)
 - tests/unit/test_fusion.py (17 passed)
 - tests/unit/test_world_border.py (37 passed)
 - tests/unit/test_spatial.py (8 passed)
@@ -1438,6 +1441,15 @@ Result: 141 passed in 18.56s (100% PASS)
 - tests/replay/test_spatial_replay.py (1 passed)
 - tests/replay/test_tracker_replay.py (1 passed)
 - tests/replay/test_replay_runner.py (1 passed)
+
+Manual Media Inspection Findings (scripts/verify_real_evidence_package.py):
+- Package Directory: storage/evidence/cam_sector_north_01/evt_demo_border_breach_001
+- Raw Snapshot: snapshot_raw.jpg (11,309 bytes) -> Verified clear keyframe
+- Annotated Snapshot: snapshot_annotated.jpg (45,234 bytes) -> Verified forensic banner + border overlay + bounding box + ground contact point
+- Pre-Event Clip: pre_event_clip.mp4 (18,288 bytes) -> Verified 2.0s approach window
+- Incident Clip: incident_clip.mp4 (52,948 bytes) -> Verified 3.5s complete breach crossing
+- Audit Manifest: manifest.json (2,072 bytes) -> Verified complete telemetry & model versions
+- SHA-256 Seal: 617158c225204a2f3370b047b095a03af616f8ea509eb181d0fd216cebfb2df1 -> [PASS] Verified intact
 
 Benchmark Measured Performance (CPU):
 - Ring Buffer Frame Push Latency: 0.08668 ms (per frame, including copy)

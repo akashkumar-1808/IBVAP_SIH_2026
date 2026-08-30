@@ -22,6 +22,7 @@ class EvidenceStatus(str, Enum):
     RECORDING = "recording"
     PACKAGED = "packaged"
     SEALED = "sealed"
+    PARTIAL = "partial"
     STORED = "stored"
     FAILED = "failed"
 
@@ -34,6 +35,7 @@ class EvidencePackageConfig(BaseModel):
     snapshot_quality: int = Field(default=95, ge=50, le=100, description="JPEG compression quality [50, 100]")
     storage_root: str = Field(default="storage/evidence", description="Local filesystem storage root")
     auto_upload_supabase: bool = Field(default=False, description="Whether to asynchronously upload to Supabase Storage")
+    auto_persist_db: bool = Field(default=False, description="Whether to persist EvidenceRecords in PostgreSQL")
 
 
 class ArtifactChecksum(BaseModel):
@@ -65,6 +67,7 @@ class EvidenceManifest(BaseModel):
     environment_quality: VisibilityQuality = VisibilityQuality.GOOD
     lighting: LightingCondition = LightingCondition.DAY
     artifacts: List[ArtifactChecksum] = Field(default_factory=list)
+    model_versions: Dict[str, str] = Field(default_factory=dict)
     sealed_at_utc: datetime = Field(default_factory=_utc_now)
     system_version: str = "IBVAP-v1.0"
     metadata: Dict[str, Any] = Field(default_factory=dict)

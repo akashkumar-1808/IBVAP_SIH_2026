@@ -37,6 +37,7 @@ class EvidencePackagerInterface(ABC):
         projected_borders: Optional[List[ProjectedBorder]] = None,
         spatial_config: Optional[CameraSpatialConfig] = None,
         current_frame: Optional[np.ndarray] = None,
+        force_repackage: bool = False,
     ) -> EvidencePackage:
         """
         Extracts snapshots, compiles pre/post/incident video clips, generates

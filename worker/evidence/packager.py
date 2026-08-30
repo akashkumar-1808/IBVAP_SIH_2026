@@ -79,9 +79,11 @@ class EvidencePackager(EvidencePackagerInterface):
         projected_borders: Optional[List[ProjectedBorder]] = None,
         spatial_config: Optional[CameraSpatialConfig] = None,
         current_frame: Optional[np.ndarray] = None,
+        force_repackage: bool = False,
     ) -> EvidencePackage:
         """
         Builds, seals, and persists a complete Evidence Package for an EventRecord.
+        Guarantees idempotency when an identical package is already sealed.
         """
         camera_id = event.camera_id
         event_id = event.id
@@ -89,8 +91,34 @@ class EvidencePackager(EvidencePackagerInterface):
 
         # 1. Create structured package directory
         pkg_dir = self.storage_manager.get_package_dir(camera_id, event_id)
+        manifest_path = os.path.join(pkg_dir, "manifest.json")
 
-        # 2. Determine Keyframe Image for Snapshot
+        # 2. Idempotency Check: Return existing sealed package if already built
+        if not force_repackage and os.path.exists(manifest_path):
+            try:
+                existing_manifest = self.storage_manager.load_manifest(manifest_path)
+                existing_seal = EvidenceHasher.hash_file(manifest_path)
+                logger.info(f"Returning existing sealed EvidencePackage for event '{event_id}' (idempotent)")
+                return EvidencePackage(
+                    id=event_id,
+                    event_id=event_id,
+                    camera_id=camera_id,
+                    status=EvidenceStatus.SEALED,
+                    package_dir=pkg_dir,
+                    snapshot_path=os.path.join(pkg_dir, "snapshot_raw.jpg"),
+                    annotated_snapshot_path=os.path.join(pkg_dir, "snapshot_annotated.jpg"),
+                    pre_event_clip_path=os.path.join(pkg_dir, "pre_event_clip.mp4") if os.path.exists(os.path.join(pkg_dir, "pre_event_clip.mp4")) else None,
+                    incident_clip_path=os.path.join(pkg_dir, "incident_clip.mp4") if os.path.exists(os.path.join(pkg_dir, "incident_clip.mp4")) else None,
+                    manifest_path=manifest_path,
+                    manifest=existing_manifest,
+                    created_at_utc=existing_manifest.sealed_at_utc,
+                    is_sealed=True,
+                    sha256_seal=existing_seal,
+                )
+            except Exception:
+                pass  # Rebuild if existing manifest corrupted
+
+        # 3. Determine Keyframe Image for Snapshot
         keyframe_img = current_frame
         if keyframe_img is None:
             latest_bf = buf.get_latest_frame()
@@ -98,10 +126,9 @@ class EvidencePackager(EvidencePackagerInterface):
                 keyframe_img = latest_bf.image
 
         if keyframe_img is None:
-            # Generate fallback black keyframe if buffer was completely empty
             keyframe_img = np.zeros((480, 640, 3), dtype=np.uint8)
 
-        # 3. Extract & Save Snapshots
+        # 4. Extract & Save Snapshots
         raw_snapshot_path = os.path.join(pkg_dir, "snapshot_raw.jpg")
         annotated_snapshot_path = os.path.join(pkg_dir, "snapshot_annotated.jpg")
 
@@ -122,14 +149,13 @@ class EvidencePackager(EvidencePackagerInterface):
             quality=self.config.snapshot_quality,
         )
 
-        # 4. Extract Video Clips from Rolling Frame Buffer
+        # 5. Extract Video Clips from Rolling Frame Buffer
         pre_start_utc = event.first_observed_utc - timedelta(seconds=self.config.pre_event_seconds)
         post_end_utc = event.last_observed_utc + timedelta(seconds=self.config.post_event_seconds)
 
         pre_frames = buf.get_window(pre_start_utc, event.first_observed_utc)
         incident_frames = buf.get_window(pre_start_utc, post_end_utc)
 
-        # If incident frames are empty (e.g. synthetic test), synthesize minimal sequence from keyframe
         if not incident_frames:
             incident_frames = [
                 BufferedFrame(0, event.first_observed_utc, keyframe_img, camera_id)
@@ -137,6 +163,8 @@ class EvidencePackager(EvidencePackagerInterface):
 
         pre_clip_path = None
         incident_clip_path = os.path.join(pkg_dir, "incident_clip.mp4")
+        is_partial = False
+        partial_error_reason = None
 
         if pre_frames:
             pre_clip_path = os.path.join(pkg_dir, "pre_event_clip.mp4")
@@ -151,8 +179,10 @@ class EvidencePackager(EvidencePackagerInterface):
         except Exception as e:
             logger.warning(f"Failed to encode incident clip: {e}")
             incident_clip_path = None
+            is_partial = True
+            partial_error_reason = str(e)
 
-        # 5. Cryptographic SHA-256 Artifact Checksums
+        # 6. Cryptographic SHA-256 Artifact Checksums
         artifact_checksums: List[ArtifactChecksum] = []
 
         if os.path.exists(raw_snapshot_path):
@@ -167,7 +197,19 @@ class EvidencePackager(EvidencePackagerInterface):
         if incident_clip_path and os.path.exists(incident_clip_path):
             artifact_checksums.append(EvidenceHasher.create_artifact_checksum(incident_clip_path, "video/mp4"))
 
-        # 6. Build & Seal Audit Manifest
+        # 7. Model Versions & Traceability
+        model_versions = {
+            "detector": "YOLOv8n-v1",
+            "tracker": "ByteTrack-v1",
+            "environment": "Env-v1",
+            "spatial": "WorldBorder-v1",
+            "fusion": "Fusion-v1",
+            "evidence": "Evidence-v1",
+        }
+        if spatial_state and spatial_state.calibration_version:
+            model_versions["calibration_version"] = spatial_state.calibration_version
+
+        # 8. Build & Seal Audit Manifest
         manifest = EvidenceManifest(
             event_id=event_id,
             camera_id=camera_id,
@@ -185,23 +227,26 @@ class EvidencePackager(EvidencePackagerInterface):
             environment_quality=event.environment_quality,
             lighting=event.lighting,
             artifacts=artifact_checksums,
+            model_versions=model_versions,
             sealed_at_utc=datetime.now(timezone.utc),
             metadata={
                 "detection_confidence": event.detection_confidence,
                 "track_persistence_frames": event.track_persistence_frames,
                 "uncertainty_flags": event.uncertainty_flags,
+                "partial_error_reason": partial_error_reason,
             },
         )
 
         manifest_path = self.storage_manager.save_manifest(manifest, pkg_dir)
         manifest_seal = EvidenceHasher.hash_file(manifest_path)
+        final_status = EvidenceStatus.PARTIAL if is_partial else EvidenceStatus.SEALED
 
-        # 7. Assemble EvidencePackage
+        # 9. Assemble EvidencePackage
         package = EvidencePackage(
             id=event_id,
             event_id=event_id,
             camera_id=camera_id,
-            status=EvidenceStatus.SEALED,
+            status=final_status,
             package_dir=pkg_dir,
             snapshot_path=raw_snapshot_path,
             annotated_snapshot_path=annotated_snapshot_path,
@@ -214,12 +259,51 @@ class EvidencePackager(EvidencePackagerInterface):
             sha256_seal=manifest_seal,
         )
 
-        # 8. Optional Supabase Storage Cloud Upload
+        # 10. Optional Supabase Storage Cloud Upload
         if self.config.auto_upload_supabase:
             self.storage_manager.upload_package_to_supabase(package)
 
-        logger.info(f"EvidencePackage created and sealed for event '{event_id}' ({len(artifact_checksums)} artifacts, seal={manifest_seal[:12]}...)")
+        # 11. Optional PostgreSQL Evidence Record Persistence
+        if self.config.auto_persist_db:
+            self._persist_to_db(package)
+
+        logger.info(f"EvidencePackage created ({final_status.value}) for event '{event_id}' ({len(artifact_checksums)} artifacts, seal={manifest_seal[:12]}...)")
         return package
+
+    def _persist_to_db(self, package: EvidencePackage) -> None:
+        """Persists individual evidence records into backend PostgreSQL."""
+        try:
+            from backend.app.db.repositories.evidence import EvidenceRepository
+            repo = EvidenceRepository()
+            manifest = package.manifest
+            if not manifest:
+                return
+
+            for art in manifest.artifacts:
+                art_path = os.path.join(package.package_dir, art.file_name)
+                record_id = f"evr_{package.event_id}_{art.file_name.replace('.', '_')}"
+                repo.upsert(
+                    record_id,
+                    {
+                        "id": record_id,
+                        "event_id": package.event_id,
+                        "camera_id": package.camera_id,
+                        "track_id": manifest.track_id,
+                        "evidence_type": art.file_name.split(".")[0],
+                        "storage_reference": art_path,
+                        "source_reference": f"{package.camera_id}_stream",
+                        "start_time_utc": manifest.first_observed_utc.isoformat(),
+                        "end_time_utc": manifest.last_observed_utc.isoformat(),
+                        "file_size_bytes": art.file_size_bytes,
+                        "mime_type": art.file_type,
+                        "sha256": art.sha256_hash,
+                        "status": package.status.value,
+                        "model_versions": manifest.model_versions,
+                        "metadata": manifest.metadata,
+                    }
+                )
+        except Exception as exc:
+            logger.debug(f"Could not persist evidence records to DB: {exc}")
 
     def verify_package(self, manifest_path: str) -> Tuple[bool, List[str]]:
         """Verifies package integrity against manifest checksums."""

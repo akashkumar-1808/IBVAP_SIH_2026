@@ -49,7 +49,7 @@ def test_full_pipeline_to_behavior_engine(behavior_test_clip):
     tracker = ByteTrackTracker(camera_id="cam_beh_replay", min_hits=1, max_lost_frames=10)
     env_analyzer = EnvironmentAnalyzer()
     spatial_engine = SpatialEngine()
-    behavior_engine = BehaviorEngine(default_config=BehaviorConfig(loitering_seconds=0.5, persistent_approach_seconds=0.5))
+    behavior_engine = BehaviorEngine(default_config=BehaviorConfig(loitering_seconds=1.0, persistent_approach_seconds=0.5))
 
     # Spatial configuration
     spatial_config = CameraSpatialConfig(

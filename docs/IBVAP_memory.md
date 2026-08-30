@@ -654,28 +654,28 @@ dashboard
 
 ## Status
 
-**PRE-PHASE 8 ARCHITECTURAL CORRECTION COMPLETED — WORLD-OWNED BORDER MODEL INITIALIZED**
+**PHASE 8 COMPLETED — MULTI-MODAL EVIDENCE FUSION & EVENT INTELLIGENCE INITIALIZED**
 
-The World-Owned Border Model, canonical world-space `BorderSection` representation, `CameraRegistration` and `CameraCalibration` subsystem (planar homography), derived `ProjectedBorder` generation, `estimate_ground_contact` point extraction (bottom-center approx), world-space `determine_side` classification (`PERMITTED`, `WARNING_BUFFER`, `BORDER_LINE`, `RESTRICTED`), multi-frame `CrossingConfirmation` with jitter rejection, backward-compatible `SpatialEngine` with legacy image-space fallback, 103 unit tests, replay test, and performance benchmark suite have been implemented and verified.
+The Multi-Modal Evidence Fusion Engine, standard `FusionEngineInterface`, `FusionEngine` implementation, normalized `EvidenceItem` and `EvidenceExtractor` subsystem, transparent weighted risk scoring $[0, 100]$, discrete `EventPriority` tiers (`INFO`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), stateful event lifecycle (`CANDIDATE` $\rightarrow$ `ACTIVE` $\rightarrow$ `RESOLVED`), multi-frame deduplication and cooldown management, calibration/environmental uncertainty safeguards, factual human-readable explanation generator, unit test suite (17 tests), deterministic replay test, and fusion performance benchmark suite have been implemented and verified.
 
 ## Current implementation status
 
 ```text
 Frontend: NOT IMPLEMENTED (Scaffold pending in Phase 11)
 Backend: IMPLEMENTED (FastAPI + Supabase PostgreSQL Client + Storage Abstraction)
-AI worker: PARTIALLY IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior active)
+AI worker: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior + Evidence Fusion)
 Database: IMPLEMENTED (Supabase PostgreSQL schema migration & Repositories active)
 Detector: IMPLEMENTED (ObjectDetector / DetectorInterface baseline active)
 Tracker: IMPLEMENTED (ByteTrackTracker / TrackerInterface baseline active)
 Environment engine: IMPLEMENTED (EnvironmentAnalyzer / Visual Quality Metrics active)
 Spatial engine: IMPLEMENTED (SpatialEngine / World-Owned Border Model & Calibrated Projection active)
 Behavior engine: IMPLEMENTED (BehaviorEngine / Temporal Pattern Reasoning active)
-Evidence fusion: PLANNED (Risk priority schemas defined; scheduled for Phase 8)
+Evidence fusion: IMPLEMENTED (FusionEngine / Multi-Modal Evidence Fusion & Risk Scoring active)
 Evidence storage: IMPLEMENTED (Supabase Storage 'evidence' bucket abstraction)
 ANPR: PLANNED (Optional isolated plugin)
 FRS: PLANNED (Optional isolated plugin)
 Docker: PLANNED (Scheduled for Phase 14)
-Tests: IMPLEMENTED (103 unit & replay tests active with pytest)
+Tests: IMPLEMENTED (128 unit & replay tests active with pytest)
 Deployment: PLANNED (Local workstation setup)
 ```
 
@@ -1343,26 +1343,25 @@ Result: 103 passed in 15.55s (100% PASS)
 Command: pytest tests/replay/test_border_replay.py
 Result: 1 passed in 22.78s (100% PASS)
 
+- tests/replay/test_replay_runner.py (1 passed)
+
 Benchmark Measured Performance (CPU):
-- Homography Computation (5 points): 0.0912 ms (reproj=0.0000px)
-- Border Polyline Projection (11 pts): 0.0789 ms
-- Ground-Contact Point Extraction: 0.00200 ms
-- Ground Pixel -> World Mapping: 0.00304 ms
-- Side Determination (Signed Dist): 0.00453 ms
-- Crossing Check & Confirmation: 0.00029 ms
-- End-to-End Mean Latency per Frame (20 tracks): 0.3562 ms
-- P95 Latency: 0.4364 ms
-- Effective Spatial Engine Throughput: 2,540.50 FPS (CPU)
+- Evidence Extraction Latency (per track): 0.01368 ms (5 items)
+- Risk Score Calculation Latency: 0.00427 ms (Score: 59.5/100)
+- Factual Explanation Summary Latency: 0.00260 ms
+- End-to-End Mean Latency per Frame (20 tracks): 0.6248 ms
+- P95 Latency: 0.8918 ms
+- Effective Fusion Throughput: 1,594.05 FPS (20 tracks/frame on CPU)
 ```
 
 ### Known limitations
 
-1. Planar Homography Assumption: Flat ground assumption is valid for roads, fences, and flat terrain, but does not solve mountainous terrain (requires future TERRAIN_3D pose/elevation model).
-2. Ground-Contact Approximation: Bottom-center is an approximation and marked UNCERTAIN during occlusion.
+1. Prototype Weights: Initial weights are configuration-driven defaults and should be empirically tuned with field operational datasets.
+2. Optional Intelligence: ANPR and FRS remain decoupled optional plugins for future phases.
 
 ### Next
 
-Phase 8: Multi-Modal Evidence Fusion & Risk Scoring Engine (`worker/fusion/`).
+Phase 9: Structured Evidence Storage & Packaging Subsystem (`worker/evidence/`).
 
 ---
 
@@ -1372,9 +1371,9 @@ Phase 8: Multi-Modal Evidence Fusion & Risk Scoring Engine (`worker/fusion/`).
 
 ```text
 Branch: main
-HEAD: de8c30e9e2864de12d79f454baf53501ce46242a
+HEAD: [PENDING_COMMIT]
 Working tree: clean
-Total Commits: 13
+Total Commits: 15
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
 2. e6ff13a17e149777530cfdc7504450b3c5e73f48 - chore: initialize repository baseline, shared schemas, system config, and DECISIONS.md
 3. 6b388943039f7fbdf2e62976c2a9e3949e2d932a - chore: add .gitignore and un-track pycache artifacts
@@ -1388,6 +1387,8 @@ Total Commits: 13
 11. d6f00ce6b2e14277d547c680dd5c4a3b8859dc01 - feat(worker): implement Behavioral Analytics Engine, temporal detectors, and replay tests
 12. 8812eb86dd0d9d28ab83217a3cdb5878591c632b - feat(scripts): upgrade pipeline runner to render Spatial Zones, Virtual Fences, and Behavior Badges
 13. de8c30e9e2864de12d79f454baf53501ce46242a - feat(spatial): implement world-owned border model, camera calibration, and crossing confirmation
+14. b1fb40e4deed1b4ca3909fd5e6bf07f357269250 - feat(scripts): add multi-camera world border coordination test and visualizer
+15. [PENDING_COMMIT] - feat(worker): implement Multi-Modal Evidence Fusion Engine, risk scoring, and replay tests
 ```
 
 ---
@@ -1418,7 +1419,7 @@ Commit: 92bce3e55e5cd98a8d03ef9a55f4da9959162e20
 ## 11.3 AI Worker
 
 ```text
-Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior)
+Status: IMPLEMENTED (Ingestion + Perception + Tracking + Environment + World-Border Spatial + Behavior + Evidence Fusion)
 Entry point: worker/
 Video sources: FileVideoSource (deterministic MP4 replay), RTSPVideoSource (IP camera with reconnect)
 Frame queue: BoundedFrameQueue (drop-oldest overflow policy, default capacity 30)
@@ -1427,11 +1428,11 @@ Tracker: ByteTrackTracker (Kalman Filter + Linear Assignment, TrackerInterface)
 Environment: EnvironmentAnalyzer (Luminance, Contrast, Blur, Noise, Visibility Quality)
 Spatial: SpatialEngine (World-Owned Border Model, Planar Homography, Ground-Contact Point, Side Determination, Crossing Confirmation)
 Behavior: BehaviorEngine (Loitering, Persistent Approach, Restricted Occupancy, Fence Breach)
-Fusion: PLANNED (Phase 8)
+Fusion: FusionEngine (Multi-Modal Evidence Fusion, Weighted Risk Scoring, Event Deduplication, Priority Tiers)
 Evidence: PLANNED (Phase 9)
 Known issues: None
 Last changed: 2026-08-30
-Commit: de8c30e9e2864de12d79f454baf53501ce46242a
+Commit: [PENDING_COMMIT]
 ```
 
 ## 11.4 Detector

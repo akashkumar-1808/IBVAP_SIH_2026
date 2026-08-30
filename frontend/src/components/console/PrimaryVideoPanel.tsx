@@ -65,21 +65,21 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontFamily: 'var(--font-mono)' }}>
-          <span>FPS: <strong style={{ color: '#38bdf8' }}>{fps > 0 ? fps.toFixed(1) : '24.8'}</strong></span>
+          <span>FPS: <strong style={{ color: '#38bdf8' }}>{fps > 0 ? fps.toFixed(1) : '--'}</strong></span>
           <span>RES: <strong style={{ color: 'var(--text-secondary)' }}>1280x720</strong></span>
           <span>
             LIGHT: <strong style={{ color: environment?.lighting === 'NIGHT' ? '#38bdf8' : '#10b981' }}>
-              {environment?.lighting || 'NIGHT'}
+              {environment?.lighting || '--'}
             </strong>
           </span>
           <span>
             VISIBILITY: <strong style={{ color: environment?.visibility === 'DEGRADED' ? '#f59e0b' : '#10b981' }}>
-              {environment?.visibility || 'DEGRADED'}
+              {environment?.visibility || '--'}
             </strong>
           </span>
           <span>
             QUALITY: <strong style={{ color: '#10b981' }}>
-              {environment?.quality_score !== undefined ? environment.quality_score.toFixed(2) : '0.61'}
+              {environment?.quality_score !== undefined ? environment.quality_score.toFixed(2) : '--'}
             </strong>
           </span>
         </div>
@@ -220,13 +220,13 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
                     fontWeight: 700,
                   }}
                 >
-                  {primarySpatial?.border_side || 'RESTRICTED'}
+                  {primarySpatial?.border_side || 'PERMITTED'}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>BEHAVIOUR</span>
-                <span style={{ color: '#f59e0b', fontWeight: 600, textAlign: 'right' }}>
-                  {primaryBehaviors.length > 0 ? primaryBehaviors.map((b) => b.behavior_type).join(', ') : 'PERSISTENT APPROACH'}
+                <span style={{ color: primaryBehaviors.length > 0 ? '#f59e0b' : 'var(--text-muted)', fontWeight: 600, textAlign: 'right' }}>
+                  {primaryBehaviors.length > 0 ? primaryBehaviors.map((b) => b.behavior_type).join(', ') : 'NONE'}
                 </span>
               </div>
             </div>
@@ -243,12 +243,12 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
             >
               <div>
                 <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>RISK SCORE</div>
-                <div style={{ fontSize: '14px', fontWeight: 800, color: '#ef4444', fontFamily: 'var(--font-mono)' }}>
-                  {activeEvent ? activeEvent.risk_score.toFixed(1) : '87.6'} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>/ 100</span>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: activeEvent ? '#ef4444' : '#10b981', fontFamily: 'var(--font-mono)' }}>
+                  {activeEvent ? activeEvent.risk_score.toFixed(1) : '0.0'} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>/ 100</span>
                 </div>
               </div>
-              <span className="status-pill pill-red">
-                {activeEvent?.priority || 'HIGH'}
+              <span className={`status-pill ${activeEvent ? 'pill-red' : 'pill-green'}`}>
+                {activeEvent?.priority || 'NORMAL'}
               </span>
             </div>
           </div>

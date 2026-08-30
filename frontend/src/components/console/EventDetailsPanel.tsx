@@ -8,35 +8,28 @@ interface EventDetailsPanelProps {
 }
 
 export const EventDetailsPanel: React.FC<EventDetailsPanelProps> = ({ event, onAcknowledge }) => {
-  const ev = event || {
-    id: 'EVT-2025-0518-000104',
-    camera_id: 'CAM-01',
-    track_id: 104,
-    border_track_id: 'BT-104',
-    event_type: 'BORDER CROSSING',
-    priority: 'HIGH' as const,
-    risk_score: 87.6,
-    status: 'ACTIVE' as const,
-    target_class: 'PERSON' as const,
-    created_at: '02:17:25 AM 18 May 2025',
-    updated_at: '02:17:25 AM 18 May 2025',
-    duration_seconds: 19.2,
-    detection_confidence: 0.92,
-    track_confidence: 0.94,
-    spatial_confidence: 0.96,
-    environment_quality: 0.61,
-    evidence_confidence: 0.87,
-    reason_codes: [
-      'PERSISTENT_TRACK_ESTABLISHED',
-      'MOVEMENT_TOWARD_PROTECTED_REGION',
-      'ENTERED_WARNING_BUFFER',
-      'BORDER_LINE_CROSSED',
-      'RESTRICTED_ZONE_OCCUPANCY',
-      'CROSS_CAMERA_CORROBORATION',
-      'EVIDENCE_CONFIDENCE_HIGH',
-    ],
-    explanation_summary: 'Confirmed human border crossing in restricted zone with persistent approach',
-  };
+  if (!event) {
+    return (
+      <div
+        className="forensic-panel"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--text-muted)',
+          fontSize: '11px',
+          textAlign: 'center',
+          gap: '6px',
+        }}
+      >
+        <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>NO INCIDENT SELECTED</div>
+        <div>Select an event or trigger a scenario to view reason codes</div>
+      </div>
+    );
+  }
+
+  const ev = event;
 
   // Convert raw reason codes into clean human-readable labels
   const formatReason = (code: string): string => {

@@ -6,16 +6,37 @@ interface EventTimelineProps {
   selectedEvent?: EventRecord | null;
 }
 
-export const EventTimeline: React.FC<EventTimelineProps> = ({ selectedEvent: _ }) => {
-  // Real timeline milestones derived from event duration/history
+export const EventTimeline: React.FC<EventTimelineProps> = ({ selectedEvent }) => {
+  if (!selectedEvent) {
+    return (
+      <div
+        className="forensic-panel"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--text-muted)',
+          fontSize: '11px',
+          textAlign: 'center',
+          gap: '6px',
+        }}
+      >
+        <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>NO TIMELINE ACTIVE</div>
+        <div>Awaiting incident events</div>
+      </div>
+    );
+  }
+
+  // Derive timeline milestones from actual event reason codes & duration
+  const baseTime = selectedEvent.created_at || '00:00:00';
   const milestones = [
-    { time: '02:17:08', label: 'Object Detected', status: 'done' },
-    { time: '02:17:11', label: 'Track Established (ID:104)', status: 'done' },
-    { time: '02:17:14', label: 'Moving Toward Border', status: 'done' },
-    { time: '02:17:18', label: 'Entered Warning Buffer', status: 'done' },
-    { time: '02:17:21', label: 'Border Crossing Detected', status: 'done' },
-    { time: '02:17:24', label: 'Entered Restricted Zone', status: 'done' },
-    { time: '02:17:25', label: 'Event Confirmed', status: 'active' },
+    { time: baseTime, label: `Target Detected (ID:#${selectedEvent.track_id})`, status: 'done' },
+    ...selectedEvent.reason_codes.map((rc, idx) => ({
+      time: baseTime,
+      label: rc.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      status: idx === selectedEvent.reason_codes.length - 1 ? ('active' as const) : ('done' as const),
+    })),
   ];
 
   return (

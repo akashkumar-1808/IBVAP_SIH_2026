@@ -66,13 +66,17 @@ export const SectorMapPanel: React.FC<SectorMapPanelProps> = ({ cameras: _, bord
             CAM-02
           </text>
 
-          {/* Multi-Camera Trajectory Path (CAM-01 -> CAM-02) */}
-          <path d="M 110 50 Q 130 90 150 115 T 190 135" fill="none" stroke="#10b981" strokeWidth="2" strokeDasharray="3,3" />
-          <circle cx="150" cy="115" r="4" fill="#10b981" />
-          <circle cx="150" cy="115" r="7" fill="none" stroke="#10b981" strokeWidth="1" />
-          <text x="160" y="118" fill="#10b981" fontSize="8" fontWeight="800">
-            {borderTrack?.border_track_id || 'BT-104'}
-          </text>
+          {/* Multi-Camera Trajectory Path (Rendered only when active) */}
+          {borderTrack && (
+            <g>
+              <path d="M 110 50 Q 130 90 150 115 T 190 135" fill="none" stroke="#10b981" strokeWidth="2" strokeDasharray="3,3" />
+              <circle cx="150" cy="115" r="4" fill="#10b981" />
+              <circle cx="150" cy="115" r="7" fill="none" stroke="#10b981" strokeWidth="1" />
+              <text x="160" y="118" fill="#10b981" fontSize="8" fontWeight="800">
+                {borderTrack.border_track_id}
+              </text>
+            </g>
+          )}
         </svg>
       </div>
     </div>

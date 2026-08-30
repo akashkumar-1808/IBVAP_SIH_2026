@@ -39,13 +39,13 @@ export const App: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null);
   const [evidencePackage, setEvidencePackage] = useState<EvidencePackage | null>(null);
   const [scenarios, setScenarios] = useState<DemonstrationScenario[]>([]);
-  const [activeScenarioId, setActiveScenarioId] = useState<string>('BORDER_CROSSING_BREACH');
+  const [activeScenarioId, setActiveScenarioId] = useState<string>('');
 
   // Real-time live telemetry state from WebSocket
   const [telemetry, setTelemetry] = useState<TelemetryPacket>({
     camera_id: 'CAM-01',
     timestamp_utc: new Date().toISOString(),
-    fps: 24.8,
+    fps: 0.0,
     is_calibrated: true,
     tracks: [],
     spatial_states: [],

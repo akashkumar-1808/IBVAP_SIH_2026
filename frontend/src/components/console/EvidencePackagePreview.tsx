@@ -18,7 +18,11 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
   const rawRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'SNAPSHOT_RAW');
   const annRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'SNAPSHOT_ANNOTATED');
 
-  const sha256Short = annRec?.sha256 ? `${annRec.sha256.substring(0, 4)}...${annRec.sha256.substring(annRec.sha256.length - 4)}` : 'a7f3...9c2e';
+  const sha256Short = annRec?.sha256
+    ? `${annRec.sha256.substring(0, 4)}...${annRec.sha256.substring(annRec.sha256.length - 4)}`
+    : evidencePackage?.sha256_seal
+    ? `${evidencePackage.sha256_seal.substring(0, 4)}...${evidencePackage.sha256_seal.substring(evidencePackage.sha256_seal.length - 4)}`
+    : '--';
 
   return (
     <div className="forensic-panel" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

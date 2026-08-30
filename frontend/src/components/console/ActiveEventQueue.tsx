@@ -13,53 +13,7 @@ export const ActiveEventQueue: React.FC<ActiveEventQueueProps> = ({
   selectedEventId,
   onSelectEvent,
 }) => {
-  // Default mock active events if queue is empty
-  const displayEvents: EventRecord[] = events.length > 0 ? events : [
-    {
-      id: 'EVT-2025-0518-000104',
-      camera_id: 'CAM-01',
-      track_id: 104,
-      border_track_id: 'BT-104',
-      event_type: 'Border Crossing',
-      priority: 'HIGH',
-      risk_score: 87.6,
-      status: 'ACTIVE',
-      target_class: 'PERSON',
-      created_at: '02:24:21 AM',
-      updated_at: '02:24:21 AM',
-      reason_codes: ['PERSISTENT_TRACK', 'BORDER_CROSSED', 'RESTRICTED_OCCUPANCY'],
-      explanation_summary: 'Confirmed human crossing into restricted sector',
-    },
-    {
-      id: 'EVT-2025-0518-000109',
-      camera_id: 'CAM-03',
-      track_id: 109,
-      border_track_id: 'BT-109',
-      event_type: 'Persistent Approach',
-      priority: 'MEDIUM',
-      risk_score: 64.0,
-      status: 'ACTIVE',
-      target_class: 'PERSON',
-      created_at: '02:19:07 AM',
-      updated_at: '02:19:07 AM',
-      reason_codes: ['MOVEMENT_TOWARD_BUFFER'],
-      explanation_summary: 'Target moving consistently toward buffer zone',
-    },
-    {
-      id: 'EVT-2025-0518-000098',
-      camera_id: 'CAM-03',
-      track_id: 98,
-      event_type: 'Animal Detected',
-      priority: 'INFO',
-      risk_score: 25.0,
-      status: 'ACTIVE',
-      target_class: 'ANIMAL',
-      created_at: '02:18:45 AM',
-      updated_at: '02:18:45 AM',
-      reason_codes: ['WILDLIFE_CLASSIFIED'],
-      explanation_summary: 'Wildlife activity near outer buffer boundary',
-    },
-  ];
+  const displayEvents: EventRecord[] = events;
 
   return (
     <div className="events-panel">
@@ -69,7 +23,27 @@ export const ActiveEventQueue: React.FC<ActiveEventQueueProps> = ({
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {displayEvents.map((ev) => {
+        {displayEvents.length === 0 ? (
+          <div
+            style={{
+              padding: '24px 12px',
+              textAlign: 'center',
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px dashed var(--border-panel)',
+              borderRadius: '6px',
+              color: 'var(--text-muted)',
+              fontSize: '11px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <div style={{ color: '#10b981', fontWeight: 600 }}>● NO ACTIVE INCIDENTS</div>
+            <div>Sector B-07 boundary secure</div>
+          </div>
+        ) : (
+          displayEvents.map((ev) => {
           const isSelected = ev.id === selectedEventId;
           const isHigh = ev.priority === 'CRITICAL' || ev.priority === 'HIGH';
           const isMed = ev.priority === 'MEDIUM';
@@ -149,7 +123,7 @@ export const ActiveEventQueue: React.FC<ActiveEventQueueProps> = ({
               </div>
             </div>
           );
-        })}
+        }))}
       </div>
     </div>
   );

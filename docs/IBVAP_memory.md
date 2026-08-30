@@ -1371,7 +1371,7 @@ Phase 9: Structured Evidence Storage & Packaging Subsystem (`worker/evidence/`).
 
 ```text
 Branch: main
-HEAD: [PENDING_COMMIT]
+HEAD: 7672d063c5a1c8d2f89668fa994555ade8dccd1f
 Working tree: clean
 Total Commits: 15
 1. 763a6a49782720d5f91afe652c4843b0c9783161 - Feat : Initial Commit ith docs placement
@@ -1388,7 +1388,7 @@ Total Commits: 15
 12. 8812eb86dd0d9d28ab83217a3cdb5878591c632b - feat(scripts): upgrade pipeline runner to render Spatial Zones, Virtual Fences, and Behavior Badges
 13. de8c30e9e2864de12d79f454baf53501ce46242a - feat(spatial): implement world-owned border model, camera calibration, and crossing confirmation
 14. b1fb40e4deed1b4ca3909fd5e6bf07f357269250 - feat(scripts): add multi-camera world border coordination test and visualizer
-15. [PENDING_COMMIT] - feat(worker): implement Multi-Modal Evidence Fusion Engine, risk scoring, and replay tests
+15. 7672d063c5a1c8d2f89668fa994555ade8dccd1f - feat(worker): implement Multi-Modal Evidence Fusion Engine, risk scoring, and replay tests
 ```
 
 ---
@@ -1432,7 +1432,7 @@ Fusion: FusionEngine (Multi-Modal Evidence Fusion, Weighted Risk Scoring, Event 
 Evidence: PLANNED (Phase 9)
 Known issues: None
 Last changed: 2026-08-30
-Commit: [PENDING_COMMIT]
+Commit: 7672d063c5a1c8d2f89668fa994555ade8dccd1f
 ```
 
 ## 11.4 Detector

@@ -1472,6 +1472,98 @@ Phase 10: System Integration & Worker Pipeline Orchestration.
 
 ---
 
+## [MEM-0014] MVP Differentiation Integration: Persistent BorderTrack, Sector Normality, Incident Narrative, and Evidence-on-Demand
+
+**Status:** IMPLEMENTED & TESTED
+
+**Date:** 2026-08-30
+
+### Change
+
+1. Created Cross-Camera Persistent Border Tracking in `worker/cross_camera/`:
+   - `schemas.py`: `AssociationState` (`CONFIRMED`, `LIKELY`, `UNCERTAIN`, `ENDED`), `AssociationSignal`, `CameraTransitionRule`, `CameraTopology`, and `BorderTrack`.
+   - `associator.py`: `CrossCameraAssociator` managing topological travel feasibility ($\Delta t \in [t_{\min}, t_{\max}]$), movement direction consistency, and object class agreement without claiming biometric ReID certainty.
+2. Created Sector Normality and Context Baseline in `worker/sector/`:
+   - `schemas.py`: `NormalityStatus` (`NORMAL`, `UNUSUAL`, `COLD_START`, `UNKNOWN`), `SectorProfile`, `SectorContext`.
+   - `baseline.py`: `SectorNormalityEngine` comparing hourly activity rates against defined/seeded sector expectations. Flags `SECTOR_ACTIVITY_UNUSUAL` as supporting evidence for abnormal nocturnal border activity while cleanly handling `COLD_START`.
+3. Created Incident Story & Sequential Narrative in `worker/fusion/incident.py`:
+   - `IncidentStep` and `IncidentStory` capturing chronological state transitions (`Approach` $\rightarrow$ `Warning Buffer` $\rightarrow$ `Border Cross` $\rightarrow$ `Restricted Occupancy` $\rightarrow$ `Cross-Camera Handoff`).
+4. Created Evidence-on-Demand & Corroboration Engine in `worker/fusion/corroboration.py`:
+   - `EvidenceRequest` and `CorroborationEngine` holding uncertain candidate events in a pending state until corroboration (persistence, border breach, neighbour camera handoff) arrives. Expired requests safely resolve to `INSUFFICIENT_EVIDENCE` without generating operator alert fatigue.
+5. Extended Multi-Modal Fusion Engine in `worker/fusion/`:
+   - Updated `EvidenceExtractor` to extract multi-camera, sector deviation, and corroboration request items.
+   - Updated `calculate_risk_score` with transparent cross-camera corroboration bonuses, nocturnal sector deviation boosts, and expired request capping ($\le 30.0$ `INFO`).
+   - Extended `EventRecord` with `border_track_id` and `corroboration_status`.
+6. Created Comprehensive 20-Scenario Test Suite in `tests/unit/test_differentiation.py` (20 tests passed).
+7. Created 3-Camera Replay Test in `tests/replay/test_multi_camera_differentiation_replay.py` (1 test passed).
+8. Created Evaluation Benchmark in `scripts/benchmark_differentiation.py` (5,034.40 FPS throughput, 0.1986 ms latency).
+9. Registered `[DEC-0009]` in `docs/DECISIONS.md`.
+
+### Purpose
+
+Differentiate IBVAP visibly from generic single-camera detection pipelines into a coordinated multi-camera border security intelligence system.
+
+### Git commit
+
+```text
+Commit: [PENDING_COMMIT]
+Message: feat(differentiation): implement persistent BorderTrack, sector normality, incident narrative, and evidence-on-demand
+```
+
+### Verification
+
+```text
+Command: pytest tests/unit/ tests/replay/
+Result: 185 passed in 38.24s (100% PASS across 28 test modules)
+- tests/unit/test_differentiation.py (20 passed)
+- tests/unit/test_evidence_extended.py (19 passed)
+- tests/unit/test_evidence_api.py (4 passed)
+- tests/unit/test_evidence.py (12 passed)
+- tests/unit/test_fusion.py (17 passed)
+- tests/unit/test_world_border.py (37 passed)
+- tests/unit/test_spatial.py (8 passed)
+- tests/unit/test_behavior.py (6 passed)
+- tests/unit/test_detector.py (7 passed)
+- tests/unit/test_tracker.py (9 passed)
+- tests/unit/test_environment_analyzer.py (7 passed)
+- tests/unit/test_bounded_queue.py (5 passed)
+- tests/unit/test_config.py (3 passed)
+- tests/unit/test_db_client.py (3 passed)
+- tests/unit/test_file_source.py (3 passed)
+- tests/unit/test_health_api.py (4 passed)
+- tests/unit/test_rtsp_source.py (3 passed)
+- tests/unit/test_schemas.py (4 passed)
+- tests/unit/test_storage_and_repos.py (4 passed)
+- tests/replay/test_multi_camera_differentiation_replay.py (1 passed)
+- tests/replay/test_evidence_replay.py (1 passed)
+- tests/replay/test_fusion_replay.py (1 passed)
+- tests/replay/test_border_replay.py (1 passed)
+- tests/replay/test_behavior_replay.py (1 passed)
+- tests/replay/test_detector_replay.py (1 passed)
+- tests/replay/test_environment_replay.py (1 passed)
+- tests/replay/test_spatial_replay.py (1 passed)
+- tests/replay/test_tracker_replay.py (1 passed)
+- tests/replay/test_replay_runner.py (1 passed)
+
+Benchmark Measured Performance (CPU):
+- Upstream Ingestion & Tracking: 45 detections / 45 track instances processed
+- Multi-Camera Association: 1 unified BorderTrack (BT-100) across 3 cameras (CAM-01 -> CAM-02 -> CAM-03)
+- False-Positive Suppression: 3/3 (100% PASS on shadow, pole, and wildlife)
+- Single-Thread Processing Latency: 0.1986 ms per frame (P95: 0.3856 ms)
+- Multi-Camera Differentiation Throughput: 5,034.40 FPS on CPU
+```
+
+### Known limitations
+
+1. Camera Topology Configuration: Requires manual or automated definition of adjacent camera pairs and physical travel bounds.
+2. Homography Continuity: Assumes calibrated planar ground coordinate frames or contiguous field-of-view overlaps.
+
+### Next
+
+MVP System Interface (Phase 10: System Integration & Worker Pipeline Orchestration).
+
+---
+
 # 10. GIT HISTORY
 
 ## Current baseline

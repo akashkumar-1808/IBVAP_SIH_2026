@@ -130,6 +130,23 @@ def calculate_risk_score(
             elif ev.reason_code == FusionReasonCode.EXCELLENT_VISIBILITY:
                 environment_factor = 0.60
 
+    # 6. Multi-Camera Corroboration & Sector Context Modifiers (DEC-0009)
+    has_cross_cam_corroboration = False
+    has_sector_deviation = False
+    is_corroboration_expired = False
+
+    for ev in evidence_items:
+        if ev.evidence_type == EvidenceType.CROSS_CAMERA_ASSOCIATION:
+            reason_codes.append(ev.reason_code)
+            has_cross_cam_corroboration = True
+        elif ev.evidence_type == EvidenceType.SECTOR_NORMALITY:
+            reason_codes.append(ev.reason_code)
+            has_sector_deviation = True
+        elif ev.evidence_type == EvidenceType.EVIDENCE_REQUEST_STATUS:
+            reason_codes.append(ev.reason_code)
+            if ev.reason_code == FusionReasonCode.INSUFFICIENT_EVIDENCE_EXPIRED:
+                is_corroboration_expired = True
+
     # -------------------------------------------------------------
     # Transparent Weighted Fusion Formula
     # -------------------------------------------------------------
@@ -148,6 +165,14 @@ def calculate_risk_score(
     total_weights = w_c + w_s + w_b + w_e
     normalized_score = (combined / total_weights) * 100.0
 
+    # Cross-camera handoff & multi-camera persistence boost (only when base activity is active)
+    if has_cross_cam_corroboration and base_activity > 0.3:
+        normalized_score += 6.0
+
+    # Sector deviation context boost (supporting evidence only)
+    if has_sector_deviation and base_activity > 0.2:
+        normalized_score += 4.0
+
     # Confirmed border crossing elevation (for human/vehicle with valid calibration)
     if (FusionReasonCode.BORDER_CROSSED in reason_codes or FusionReasonCode.FENCE_BREACH_DETECTED in reason_codes) and not is_spatial_invalid:
         if class_score >= 0.7:  # Person or Vehicle
@@ -156,6 +181,10 @@ def calculate_risk_score(
     # Single-frame shadow / short-lived suppression:
     # If track persistence is short and no sustained behavior, cap score at low tier
     if persistence_modifier < 0.4 and behavior_score < 0.5 and spatial_score < 0.8:
+        normalized_score = min(normalized_score, config.threshold_info_max)
+
+    # Corroboration timeout / expired evidence: cap score at INFO
+    if is_corroboration_expired:
         normalized_score = min(normalized_score, config.threshold_info_max)
 
     # Animal suppression: animal in safe/buffer zone cannot exceed LOW threshold

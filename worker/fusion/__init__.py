@@ -25,6 +25,8 @@ from .exceptions import (
     InvalidFusionConfigError,
     EvidenceExtractionError,
 )
+from .incident import IncidentStory, IncidentStep
+from .corroboration import CorroborationEngine, EvidenceRequest, CorroborationReason, RequestStatus
 
 __all__ = [
     "FusionEngineInterface",
@@ -46,4 +48,10 @@ __all__ = [
     "FusionError",
     "InvalidFusionConfigError",
     "EvidenceExtractionError",
+    "IncidentStory",
+    "IncidentStep",
+    "CorroborationEngine",
+    "EvidenceRequest",
+    "CorroborationReason",
+    "RequestStatus",
 ]

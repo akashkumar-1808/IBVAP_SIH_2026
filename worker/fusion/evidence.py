@@ -35,6 +35,9 @@ class EvidenceType(str, Enum):
     ENVIRONMENT_QUALITY = "environment_quality"
     CALIBRATION_CONFIDENCE = "calibration_confidence"
     OPTIONAL_INTELLIGENCE = "optional_intelligence"
+    CROSS_CAMERA_ASSOCIATION = "cross_camera_association"
+    SECTOR_NORMALITY = "sector_normality"
+    EVIDENCE_REQUEST_STATUS = "evidence_request_status"
 
 
 class EvidenceItem(BaseModel):
@@ -62,6 +65,9 @@ class EvidenceExtractor:
         behaviors: List[BehaviorPrimitive],
         camera_id: str,
         timestamp_utc: datetime,
+        border_track: Optional[Any] = None,
+        sector_context: Optional[Any] = None,
+        evidence_requests: Optional[List[Any]] = None,
     ) -> List[EvidenceItem]:
         evidence_list: List[EvidenceItem] = []
 
@@ -362,5 +368,86 @@ class EvidenceExtractor:
                     track_id=track.track_id,
                     camera_id=camera_id,
                 ))
+
+        # -------------------------------------------------------------
+        # 6. Multi-Camera Persistent Border Track Evidence (DEC-0009)
+        # -------------------------------------------------------------
+        if border_track:
+            if len(border_track.camera_sequence) > 1 and border_track.association_confidence >= 0.50:
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.CROSS_CAMERA_ASSOCIATION,
+                    source_module="cross_camera",
+                    value=border_track.border_track_id,
+                    confidence=border_track.association_confidence,
+                    weight=1.2,
+                    reason_code=FusionReasonCode.CROSS_CAMERA_CORROBORATED,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                    metadata={
+                        "camera_sequence": border_track.camera_sequence,
+                        "state": border_track.association_state.value,
+                    },
+                ))
+            if border_track.association_state == "confirmed":
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.CROSS_CAMERA_ASSOCIATION,
+                    source_module="cross_camera",
+                    value=border_track.border_track_id,
+                    confidence=border_track.association_confidence,
+                    weight=1.0,
+                    reason_code=FusionReasonCode.CROSS_CAMERA_HANDOFF_CONFIRMED,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                ))
+
+        # -------------------------------------------------------------
+        # 7. Sector Context & Normality Baseline Evidence (DEC-0009)
+        # -------------------------------------------------------------
+        if sector_context:
+            if sector_context.status == "unusual":
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.SECTOR_NORMALITY,
+                    source_module="sector",
+                    value=sector_context.reason or "Unusual sector activity",
+                    confidence=0.85,
+                    weight=1.0,
+                    reason_code=FusionReasonCode.SECTOR_ACTIVITY_UNUSUAL,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                    metadata={"deviation_ratio": sector_context.deviation_ratio},
+                ))
+
+        # -------------------------------------------------------------
+        # 8. Evidence-on-Demand & Corroboration Requests (DEC-0009)
+        # -------------------------------------------------------------
+        if evidence_requests:
+            for req in evidence_requests:
+                if req.status == "fulfilled":
+                    evidence_list.append(EvidenceItem(
+                        evidence_type=EvidenceType.EVIDENCE_REQUEST_STATUS,
+                        source_module="corroboration",
+                        value=req.fulfillment_details or "Corroboration verified",
+                        confidence=0.95,
+                        weight=1.1,
+                        reason_code=FusionReasonCode.EVIDENCE_REQUEST_FULFILLED,
+                        timestamp_utc=timestamp_utc,
+                        track_id=track.track_id,
+                        camera_id=camera_id,
+                    ))
+                elif req.status == "expired":
+                    evidence_list.append(EvidenceItem(
+                        evidence_type=EvidenceType.EVIDENCE_REQUEST_STATUS,
+                        source_module="corroboration",
+                        value=req.fulfillment_details or "Corroboration timed out",
+                        confidence=0.30,
+                        weight=0.5,
+                        reason_code=FusionReasonCode.INSUFFICIENT_EVIDENCE_EXPIRED,
+                        timestamp_utc=timestamp_utc,
+                        track_id=track.track_id,
+                        camera_id=camera_id,
+                    ))
 
         return evidence_list

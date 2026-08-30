@@ -76,6 +76,13 @@ class FusionReasonCode(str, Enum):
     GROUND_POINT_UNCERTAIN = "ground_point_uncertain"
     EVIDENCE_CONFLICT = "evidence_conflict"
 
+    # Multi-Camera & Sector Intelligence (DEC-0009)
+    CROSS_CAMERA_CORROBORATED = "cross_camera_corroborated"
+    CROSS_CAMERA_HANDOFF_CONFIRMED = "cross_camera_handoff_confirmed"
+    SECTOR_ACTIVITY_UNUSUAL = "sector_activity_unusual"
+    EVIDENCE_REQUEST_FULFILLED = "evidence_request_fulfilled"
+    INSUFFICIENT_EVIDENCE_EXPIRED = "insufficient_evidence_expired"
+
 
 class FusionConfig(BaseModel):
     """Configurable weights, thresholds, and operational parameters for Evidence Fusion."""
@@ -108,13 +115,15 @@ class FusionConfig(BaseModel):
     # Priority thresholds [0, 100]
     threshold_info_max: float = Field(default=30.0, ge=0.0, le=100.0)
     threshold_low_max: float = Field(default=50.0, ge=0.0, le=100.0)
-    threshold_medium_max: float = Field(default=70.0, ge=0.0, le=100.0)
-    threshold_high_max: float = Field(default=85.0, ge=0.0, le=100.0)  # > 85 = CRITICAL
+    threshold_medium_max: float = Field(default=75.0, ge=0.0, le=100.0)
+    threshold_high_max: float = Field(default=90.0, ge=0.0, le=100.0)
 
-    # Operational lifecycle thresholds
-    min_track_persistence_frames: int = Field(default=3, ge=1, description="Minimum track persistence before elevating to HIGH")
-    event_cooldown_seconds: float = Field(default=10.0, ge=1.0, description="Cooldown interval before repeating non-continuous events")
-    event_timeout_seconds: float = Field(default=4.0, ge=1.0, description="Seconds without track observation before resolving active event")
+    # Tracking & Environmental scaling factors
+    min_track_persistence_frames: int = Field(default=3, ge=1)
+    suppress_transient_tracks: bool = True
+    bad_weather_discount: float = Field(default=0.15, ge=0.0, le=0.5)
+    event_cooldown_seconds: float = Field(default=10.0, ge=1.0)
+    event_timeout_seconds: float = Field(default=4.0, ge=1.0)
 
 
 class EvidenceReference(BaseModel):
@@ -135,6 +144,7 @@ class EventRecord(BaseModel):
     id: str = Field(..., description="Unique deterministic or UUID identifier for the security event")
     camera_id: str
     track_id: int
+    border_track_id: Optional[str] = None
     event_type: EventType
     priority: EventPriority
     risk_score: float = Field(..., ge=0.0, le=100.0, description="Calibrated risk priority score [0, 100]")
@@ -153,6 +163,7 @@ class EventRecord(BaseModel):
     border_section_id: Optional[str] = None
     environment_quality: VisibilityQuality = VisibilityQuality.GOOD
     lighting: LightingCondition = LightingCondition.DAY
+    corroboration_status: Optional[str] = None
 
     # Machine-readable reasons & evidence traceability
     reason_codes: List[FusionReasonCode] = Field(default_factory=list)

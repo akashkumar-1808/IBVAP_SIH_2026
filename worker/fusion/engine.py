@@ -29,6 +29,10 @@ from .scoring import (
     generate_factual_summary,
 )
 from .exceptions import InvalidFusionConfigError
+from .incident import IncidentStory
+from .corroboration import CorroborationEngine
+from ..cross_camera.associator import CrossCameraAssociator
+from ..sector.baseline import SectorNormalityEngine
 from ..tracking.schemas import TrackState
 from ..spatial.schemas import SpatialState, SpatialConfidence
 from ..environment.schemas import EnvironmentState
@@ -48,6 +52,7 @@ class FusionEngine(FusionEngineInterface):
     3. Multi-frame cooldown to prevent alert storms.
     4. Safe handling of invalid camera calibration and environmental uncertainty.
     5. Pure factual human-readable explanations without hallucination.
+    6. Multi-Camera BorderTrack persistence, Sector context, and Evidence-on-Demand (DEC-0009).
     """
 
     def __init__(self, default_config: Optional[FusionConfig] = None):
@@ -59,6 +64,11 @@ class FusionEngine(FusionEngineInterface):
         self._cooldowns: Dict[str, Dict[str, datetime]] = {}
         # Historical / resolved events cache (bounded)
         self._historical_events: Dict[str, List[EventRecord]] = {}
+        # Multi-Camera & Sector Subsystems (DEC-0009)
+        self.cross_camera_associator = CrossCameraAssociator()
+        self.sector_normality_engine = SectorNormalityEngine()
+        self.corroboration_engine = CorroborationEngine()
+        self.incident_stories: Dict[str, IncidentStory] = {}
 
     def configure(self, camera_id: str, config: FusionConfig) -> None:
         """Registers custom weights and operational thresholds for a camera."""
@@ -98,6 +108,7 @@ class FusionEngine(FusionEngineInterface):
         behavior_primitives: List[BehaviorPrimitive],
         camera_id: str,
         timestamp_utc: datetime,
+        sector_id: Optional[str] = None,
     ) -> List[EventRecord]:
         """
         Processes active multi-modal observations and produces or updates EventRecord instances.
@@ -128,7 +139,31 @@ class FusionEngine(FusionEngineInterface):
             spatial = spatial_map.get(t_id)
             behaviors = behavior_map.get(t_id, [])
 
-            # 1. Extract Normalized Evidence Items
+            # 1. Multi-Camera BorderTrack Association (DEC-0009)
+            border_track = self.cross_camera_associator.process_track(
+                track=track,
+                camera_id=camera_id,
+                spatial_state=spatial,
+                current_time_utc=timestamp_utc,
+            )
+
+            # 2. Sector Normality Context (DEC-0009)
+            sector_context = self.sector_normality_engine.evaluate_activity(
+                sector_id=sector_id or "default_sector",
+                timestamp_utc=timestamp_utc,
+                target_class=track.class_id,
+                observed_count=len(tracks),
+            )
+
+            # 3. Evidence-on-Demand & Corroboration Engine Check (DEC-0009)
+            corroboration_updates = self.corroboration_engine.evaluate_corroboration(
+                track=track,
+                spatial_state=spatial,
+                border_track=border_track,
+                current_time_utc=timestamp_utc,
+            )
+
+            # 4. Extract Normalized Multi-Modal Evidence Items
             evidence_items = EvidenceExtractor.extract_evidence(
                 track=track,
                 spatial=spatial,
@@ -136,12 +171,35 @@ class FusionEngine(FusionEngineInterface):
                 behaviors=behaviors,
                 camera_id=camera_id,
                 timestamp_utc=timestamp_utc,
+                border_track=border_track,
+                sector_context=sector_context,
+                evidence_requests=corroboration_updates,
             )
 
-            # 2. Compute Deterministic Risk Priority Score
+            # 5. Compute Deterministic Risk Priority Score
             score, reason_codes, uncertainty_flags = calculate_risk_score(evidence_items, config)
             priority = map_score_to_priority(score, config)
             event_type = determine_primary_event_type(evidence_items)
+
+            # 6. Record Step in Incident Narrative Story (DEC-0009)
+            story_key = f"{camera_id}_{t_id}"
+            if story_key not in self.incident_stories:
+                self.incident_stories[story_key] = IncidentStory(
+                    story_id=f"story_{story_key}",
+                    track_id=t_id,
+                    border_track_id=border_track.border_track_id if border_track else None,
+                )
+            story = self.incident_stories[story_key]
+            story.border_track_id = border_track.border_track_id if border_track else None
+            story.add_step(
+                camera_id=camera_id,
+                state_type=event_type.value.upper(),
+                description=f"{track.class_id.value.title()} track persistence {len(track.trajectory)} frames, score={score:.1f}",
+                timestamp_utc=timestamp_utc,
+                spatial_side=spatial.border_side if spatial else None,
+                behavior_type=behaviors[0].behavior_type if behaviors else None,
+                risk_score=score,
+            )
 
             # Build EvidenceReferences
             evidence_refs = [
@@ -202,6 +260,7 @@ class FusionEngine(FusionEngineInterface):
                             id=f"evt_{uuid.uuid4().hex[:12]}",
                             camera_id=camera_id,
                             track_id=t_id,
+                            border_track_id=border_track.border_track_id if border_track else None,
                             event_type=event_type,
                             priority=priority,
                             risk_score=score,

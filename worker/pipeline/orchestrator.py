@@ -193,8 +193,6 @@ class LivePipelineOrchestrator:
     def run(self) -> PipelineMetrics:
         """Main execution entrypoint for live processing."""
         self._is_running = True
-        self._start_time = datetime.now(timezone.utc)
-        self.metrics.started_at_utc = self._start_time
 
         # Print Startup Banner
         self._print_startup_banner()
@@ -202,6 +200,10 @@ class LivePipelineOrchestrator:
         # Initialize detector warmup
         self.detector.load()
         self.detector.warmup()
+
+        # Start runtime clock after warmup is complete
+        self._start_time = datetime.now(timezone.utc)
+        self.metrics.started_at_utc = self._start_time
 
         try:
             while self._is_running and not self._shutdown_requested:
@@ -323,7 +325,8 @@ class LivePipelineOrchestrator:
                     if matching_tr and matching_sp:
                         pkg = self.evidence_packager.create_package(ev, matching_tr, matching_sp)
                         self.metrics.total_evidence_packages += 1
-                        print(f"Evidence Package Sealed: {pkg.package_id} [SHA-256: {pkg.sha256_seal[:16]}...]")
+                        seal_preview = pkg.sha256_seal[:16] if pkg.sha256_seal else "sealed"
+                        print(f"Evidence Package Sealed: {pkg.id} [SHA-256: {seal_preview}...]")
 
                 if not any(e.id == ev.id for e in self._recorded_events):
                     self._recorded_events.append(ev)

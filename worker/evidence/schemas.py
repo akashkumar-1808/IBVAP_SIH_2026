@@ -92,6 +92,11 @@ class EvidencePackage(BaseModel):
     is_sealed: bool = True
     sha256_seal: Optional[str] = None
 
+    @property
+    def package_id(self) -> str:
+        """Alias for id."""
+        return self.id
+
 
 __all__ = [
     "EvidenceStatus",

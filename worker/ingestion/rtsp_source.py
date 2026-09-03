@@ -167,6 +167,8 @@ class RTSPVideoSource(VideoSource):
                 self._frame_id += 1
 
                 with self._lock:
+                    if self._latest_frame is not None:
+                        self._health_metrics.frames_dropped += 1
                     self._latest_frame = packet
             else:
                 consecutive_errors += 1

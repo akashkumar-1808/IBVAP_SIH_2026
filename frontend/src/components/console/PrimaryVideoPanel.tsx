@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { CameraCalibration, EnvironmentState, SpatialState, TrackState, BehaviorPrimitive, EventRecord } from '../../types';
+import { CameraCalibration, EnvironmentState, SpatialState, TrackState, BehaviorPrimitive, EventRecord, CameraContract } from '../../types';
 import { getStreamUrl } from '../../services/api';
 import { ArrowUpRight, Video, Plus } from 'lucide-react';
 
@@ -13,6 +13,7 @@ interface PrimaryVideoPanelProps {
   spatialStates: SpatialState[];
   behaviors: BehaviorPrimitive[];
   activeEvents: EventRecord[];
+  cameraTelemetry?: CameraContract;
   onOpenAddCamera?: () => void;
 }
 
@@ -21,11 +22,11 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   cameraName,
   fps,
   environment,
-  calibration,
   tracks,
   spatialStates,
   behaviors,
   activeEvents,
+  cameraTelemetry,
   onOpenAddCamera,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,10 +46,6 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   const primaryBehaviors = primaryTrack ? behaviors.filter((b) => b.track_id === primaryTrack.track_id) : [];
   const activeEvent = activeEvents[0] || null;
 
-  // Viewport normalization (1280x720 base)
-  const baseW = 1280;
-  const baseH = 720;
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
       {/* Stream Top Telemetry Strip */}
@@ -67,12 +64,15 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{cameraId}</span>
           <span style={{ color: 'var(--text-muted)' }}>| {cameraName}</span>
-          <span style={{ color: 'var(--accent-cyan)' }}>| RTSP LIVE</span>
+          <span style={{ color: 'var(--accent-cyan)' }}>| LIVE HUD</span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontFamily: 'var(--font-mono)' }}>
-          <span>FPS: <strong style={{ color: '#38bdf8' }}>{fps > 0 ? fps.toFixed(1) : '--'}</strong></span>
-          <span>RES: <strong style={{ color: 'var(--text-secondary)' }}>1280x720</strong></span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+          <span>STATUS: <strong style={{ color: cameraTelemetry?.connection_status === 'OFFLINE' ? '#ef4444' : '#10b981' }}>{cameraTelemetry?.connection_status || 'ONLINE'}</strong></span>
+          <span>CAP: <strong style={{ color: '#38bdf8' }}>{cameraTelemetry?.capture_fps ? `${cameraTelemetry.capture_fps.toFixed(1)} FPS` : (fps > 0 ? `${fps.toFixed(1)} FPS` : '--')}</strong></span>
+          <span>PROC: <strong style={{ color: '#38bdf8' }}>{fps > 0 ? `${fps.toFixed(1)} FPS` : '--'}</strong></span>
+          <span>LATENCY: <strong style={{ color: '#a78bfa' }}>{cameraTelemetry?.processing_latency_ms ? `${cameraTelemetry.processing_latency_ms.toFixed(0)}ms` : '--'}</strong></span>
+          <span>AGE: <strong style={{ color: '#10b981' }}>{cameraTelemetry?.frame_age_ms !== undefined ? `${cameraTelemetry.frame_age_ms.toFixed(0)}ms` : '--'}</strong></span>
           <span>
             LIGHT: <strong style={{ color: environment?.lighting === 'NIGHT' ? '#38bdf8' : '#10b981' }}>
               {environment?.lighting || '--'}
@@ -81,11 +81,6 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
           <span>
             VISIBILITY: <strong style={{ color: environment?.visibility === 'DEGRADED' ? '#f59e0b' : '#10b981' }}>
               {environment?.visibility || '--'}
-            </strong>
-          </span>
-          <span>
-            QUALITY: <strong style={{ color: '#10b981' }}>
-              {environment?.quality_score !== undefined ? environment.quality_score.toFixed(2) : '--'}
             </strong>
           </span>
         </div>
@@ -133,86 +128,7 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
           </div>
         )}
 
-        {/* Dynamic World Border & Detection Overlay */}
-        <svg className="svg-overlay" viewBox={`0 0 ${baseW} ${baseH}`} preserveAspectRatio="none">
-          {/* 1. Warning Buffer Line (Amber) */}
-          {calibration?.warning_buffer_points && calibration.warning_buffer_points.length >= 2 && (
-            <polyline
-              points={calibration.warning_buffer_points.map((p) => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke="#f59e0b"
-              strokeWidth="2"
-              strokeDasharray="6,4"
-            />
-          )}
-
-          {/* 2. Projected Real-World Border Line (Red) */}
-          {calibration?.projected_points && calibration.projected_points.length >= 2 && (
-            <polyline
-              points={calibration.projected_points.map((p) => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke="#ef4444"
-              strokeWidth="3"
-            />
-          )}
-
-          {/* 3. Trajectory Trails */}
-          {tracks.map((tr) => {
-            if (!tr.trajectory || tr.trajectory.length < 2) return null;
-            const pointsStr = tr.trajectory.map((pt) => `${pt.x},${pt.y}`).join(' ');
-            return (
-              <polyline
-                key={`traj_${tr.track_id}`}
-                points={pointsStr}
-                fill="none"
-                stroke="#10b981"
-                strokeWidth="2"
-                strokeDasharray="4,4"
-              />
-            );
-          })}
-
-          {/* 4. Track Bounding Boxes & Ground Contacts */}
-          {tracks.map((tr) => {
-            const bx = tr.bbox.x_min;
-            const by = tr.bbox.y_min;
-            const bw = tr.bbox.x_max - tr.bbox.x_min;
-            const bh = tr.bbox.y_max - tr.bbox.y_min;
-            const sp = spatialStates.find((s) => s.track_id === tr.track_id);
-            const isBreach = sp?.border_side === 'RESTRICTED';
-            const isBuffer = sp?.border_side === 'WARNING_BUFFER';
-            const strokeColor = isBreach ? '#ef4444' : isBuffer ? '#f59e0b' : '#10b981';
-
-            const footX = (tr.bbox.x_min + tr.bbox.x_max) / 2;
-            const footY = tr.bbox.y_max;
-
-            return (
-              <g key={`box_${tr.track_id}`}>
-                {/* Bounding Box */}
-                <rect
-                  x={bx}
-                  y={by}
-                  width={bw}
-                  height={bh}
-                  fill="rgba(0,0,0,0.15)"
-                  stroke={strokeColor}
-                  strokeWidth="2"
-                  rx="2"
-                />
-
-                {/* Ground Contact Point */}
-                <circle cx={footX} cy={footY} r="5" fill="#10b981" />
-                <circle cx={footX} cy={footY} r="8" fill="none" stroke="#10b981" strokeWidth="1.5" />
-
-                {/* Track Tag */}
-                <rect x={bx} y={by - 20} width={70} height={18} fill="#0f131a" rx="2" stroke={strokeColor} strokeWidth="1" />
-                <text x={bx + 5} y={by - 7} fill="#f8fafc" fontSize="10" fontWeight="700" fontFamily="Inter">
-                  ID:{tr.track_id}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+        {/* Backend OpenCV visualizer is the single source of truth for HUD annotations. */}
 
         {/* Floating Forensic Track Intelligence Card (Matching Visual Concept) */}
         {primaryTrack && (

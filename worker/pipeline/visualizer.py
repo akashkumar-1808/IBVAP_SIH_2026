@@ -7,14 +7,14 @@ Renders real-time HUD overlays:
 - Object classifications & ByteTrack IDs
 - Behavioral primitives & spatial boundary relationships
 - Operational risk score badges & event priority banners
-- Environmental condition telemetry
+- Environmental condition telemetry & detection stabilization stats
 
-Architecture Decision: DEC-0010
+Architecture Decision: DEC-0010, DEC-0012
 """
 
 import cv2
 import numpy as np
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Any
 from datetime import datetime
 
 from worker.tracking.schemas import TrackState, TargetClass
@@ -53,13 +53,24 @@ class LiveStreamVisualizer:
         projected_border: Optional[ProjectedBorder] = None,
         is_calibrated: bool = True,
         fps: float = 0.0,
+        raw_detections_count: int = 0,
+        operational_detections_count: int = 0,
+        camera_motion: Optional[Any] = None,
     ) -> np.ndarray:
         """Draws all analytical overlays on a copy of the input frame."""
         vis = frame.copy()
         h, w = vis.shape[:2]
 
         # 1. Top Telemetry HUD Banner
-        self._draw_hud_banner(vis, environment, fps)
+        self._draw_hud_banner(
+            img=vis,
+            env=environment,
+            fps=fps,
+            raw_detections_count=raw_detections_count,
+            operational_detections_count=operational_detections_count,
+            active_tracks_count=len(tracks),
+            camera_motion=camera_motion,
+        )
 
         # 2. Draw Calibrated World Border
         self._draw_border_overlay(vis, projected_border, is_calibrated)
@@ -71,7 +82,7 @@ class LiveStreamVisualizer:
             behavior_map.setdefault(b.track_id, []).append(b)
         event_map = {e.track_id: e for e in events}
 
-        # 4. Draw Tracks & Target Overlays
+        # 4. Draw Tracks & Target Overlays (Operational tracked objects only)
         for track in tracks:
             t_id = track.track_id
             spatial = spatial_map.get(t_id)
@@ -87,25 +98,43 @@ class LiveStreamVisualizer:
 
         return vis
 
-    def _draw_hud_banner(self, img: np.ndarray, env: Optional[EnvironmentState], fps: float) -> None:
+    def _draw_hud_banner(
+        self,
+        img: np.ndarray,
+        env: Optional[EnvironmentState],
+        fps: float,
+        raw_detections_count: int = 0,
+        operational_detections_count: int = 0,
+        active_tracks_count: int = 0,
+        camera_motion: Optional[Any] = None,
+    ) -> None:
         """Renders top dark telemetry strip."""
         w = img.shape[1]
         cv2.rectangle(img, (0, 0), (w, 36), COLOR_DARK_BG, -1)
         cv2.line(img, (0, 36), (w, 36), (60, 60, 60), 1)
 
-        # Left: Camera & FPS
+        # Camera & FPS
         fps_text = f"{fps:.1f} FPS" if fps > 0 else "-- FPS"
-        left_text = f"IBVAP LIVE | {self.camera_id} | {fps_text}"
-        cv2.putText(img, left_text, (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.60, COLOR_WHITE, 2)
+        
+        # Camera motion state display
+        cam_state = "STABLE"
+        if camera_motion:
+            if hasattr(camera_motion, "state"):
+                cam_state = getattr(camera_motion.state, "value", str(camera_motion.state))
+            elif isinstance(camera_motion, str):
+                cam_state = camera_motion
+
+        left_text = f"IBVAP | {self.camera_id} | {fps_text} | RAW:{raw_detections_count} OP:{operational_detections_count} TRK:{active_tracks_count} | CAM:{cam_state}"
+        cv2.putText(img, left_text, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.46, COLOR_WHITE, 1)
 
         # Right: Environmental telemetry
         if env:
             light_str = env.lighting.value.upper()
             vis_str = env.visibility.value.upper()
             qual_str = f"Q:{env.quality_score:.2f}"
-            env_text = f"LIGHT: {light_str} | VIS: {vis_str} | {qual_str}"
-            (tw, _), _ = cv2.getTextSize(env_text, cv2.FONT_HERSHEY_SIMPLEX, 0.50, 1)
-            cv2.putText(img, env_text, (w - tw - 12, 23), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (200, 220, 200), 1)
+            env_text = f"LIGHT:{light_str} | VIS:{vis_str} | {qual_str}"
+            (tw, _), _ = cv2.getTextSize(env_text, cv2.FONT_HERSHEY_SIMPLEX, 0.46, 1)
+            cv2.putText(img, env_text, (w - tw - 10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (200, 220, 200), 1)
 
     def _draw_border_overlay(self, img: np.ndarray, proj: Optional[ProjectedBorder], is_calibrated: bool) -> None:
         """Draws projected world border line and buffer zones."""
@@ -116,17 +145,21 @@ class LiveStreamVisualizer:
 
         pts = np.array(proj.projected_points, dtype=np.int32)
         if len(pts) >= 2:
-            # Draw Main Border Line
+            # Draw Main Border Line (Red)
             cv2.polylines(img, [pts], isClosed=False, color=COLOR_DANGER, thickness=3)
+
             # Label
             mid_pt = pts[len(pts) // 2]
-            cv2.putText(img, f"WORLD BORDER [{proj.border_section_id}]", (mid_pt[0] + 8, mid_pt[1] - 8),
+            cv2.putText(img, f"VIRTUAL BORDER [{proj.border_section_id}]", (mid_pt[0] + 8, mid_pt[1] - 8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, COLOR_DANGER, 1)
 
-        # Draw Warning Buffer if present
+        # Draw Warning Buffer if present (Amber)
         if proj.warning_buffer_points and len(proj.warning_buffer_points) >= 2:
             buf_pts = np.array(proj.warning_buffer_points, dtype=np.int32)
             cv2.polylines(img, [buf_pts], isClosed=False, color=COLOR_WARNING, thickness=2)
+            b_mid = buf_pts[len(buf_pts) // 2]
+            cv2.putText(img, "WARNING BUFFER ZONE (15m)", (b_mid[0] + 8, b_mid[1] - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, COLOR_WARNING, 1)
 
     def _draw_single_track(
         self,
@@ -160,18 +193,24 @@ class LiveStreamVisualizer:
             cv2.polylines(img, [traj_pts], isClosed=False, color=color, thickness=2)
 
         # 3. Ground Contact Point
-        gc_x, gc_y = int((x1 + x2) / 2), y2
+        gc_x = int((x1 + x2) / 2)
+        gc_y = y2
+        if spatial and spatial.ground_contact:
+            gc_x = int(spatial.ground_contact.x)
+            gc_y = int(spatial.ground_contact.y)
         cv2.circle(img, (gc_x, gc_y), 4, (0, 255, 0), -1)
         cv2.circle(img, (gc_x, gc_y), 6, COLOR_WHITE, 1)
 
         # 4. Multi-Line Annotation Card
+        conf_val = track.confidence_history[-1] if track.confidence_history else 0.92
+        conf_pct = int(round(conf_val * 100))
         lines = [
-            f"ID #{track.track_id} | {track.class_id.value.upper()}",
+            f"{track.class_id.value.upper()} | ID #{track.track_id} | {conf_pct}%",
         ]
         if spatial:
-            side_str = spatial.border_side.value.upper()
-            dir_str = spatial.direction.value.upper()
-            lines.append(f"SIDE: {side_str} ({dir_str})")
+            side_str = spatial.border_side.value.upper() if spatial.border_side else "PERMITTED"
+            dir_str = spatial.direction.value.upper() if hasattr(spatial.direction, "value") else str(spatial.direction).upper()
+            lines.append(f"ZONE: {side_str} ({dir_str})")
             if spatial.crossing_status == CrossingStatus.CONFIRMED_CROSSING:
                 lines.append("!! BORDER BREACH !!")
 
@@ -197,15 +236,10 @@ class LiveStreamVisualizer:
         badge_w, badge_h = 320, 60
         bx1 = w - badge_w - 12
         by1 = h - badge_h - 12
+        cv2.rectangle(img, (bx1, by1), (w - 12, h - 12), COLOR_DARK_BG, -1)
+        cv2.rectangle(img, (bx1, by1), (w - 12, h - 12), COLOR_DANGER, 2)
 
-        color = COLOR_DANGER if event.priority in (EventPriority.HIGH, EventPriority.CRITICAL) else COLOR_WARNING
-        cv2.rectangle(img, (bx1, by1), (bx1 + badge_w, by1 + badge_h), COLOR_DARK_BG, -1)
-        cv2.rectangle(img, (bx1, by1), (bx1 + badge_w, by1 + badge_h), color, 2)
-
-        title = f"ACTIVE EVENT: {event.event_type.value.upper()}"
-        detail = f"Priority: {event.priority.value.upper()} | Score: {event.risk_score:.1f}"
-        summary = event.explanation_summary[:42] + ("..." if len(event.explanation_summary) > 42 else "")
-
-        cv2.putText(img, title, (bx1 + 8, by1 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
-        cv2.putText(img, detail, (bx1 + 8, by1 + 36), cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_WHITE, 1)
-        cv2.putText(img, summary, (bx1 + 8, by1 + 52), cv2.FONT_HERSHEY_SIMPLEX, 0.36, COLOR_TEXT_DIM, 1)
+        cv2.putText(img, f"EVENT: {event.event_type.value.upper()}", (bx1 + 10, by1 + 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, COLOR_DANGER, 1)
+        cv2.putText(img, f"PRIORITY: {event.priority.value.upper()} | RISK: {event.risk_score:.1f}", (bx1 + 10, by1 + 44),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, COLOR_WHITE, 1)

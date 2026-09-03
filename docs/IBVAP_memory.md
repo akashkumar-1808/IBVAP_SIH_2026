@@ -3081,3 +3081,26 @@ The next agent must be able to continue the project **without relying on previou
 ---
 
 # END OF INITIAL MEMORY FILE
+---
+
+# 55. BASIC DETECTION STABILIZATION (2026-08-31)
+
+## Status
+- **Perception Stabilization**: COMPLETED & VERIFIED (202/202 tests passing).
+- **Night / Low-Light Perception**: "Normal/daytime perception stabilization was implemented. Night/low-light perception remains unchanged and is intentionally deferred."
+
+## What Changed
+1. **`worker/perception/filter.py`**:
+   - `DetectionFilter`: Excludes `TargetClass.UNKNOWN` from operational ByteTrack pipeline while preserving 100% of raw detections in forensic telemetry.
+   - Quality checks: Bounding box non-zero dimensions ($w \ge 8$ px, $h \ge 8$ px, area $\ge 64$ px$^2$, bounded coordinates).
+   - `CameraMotionEstimator`: Sub-millisecond ($<0.4$ ms) optical flow motion estimator classifying `CAMERA STABLE` vs `CAMERA MOVING`.
+   - Adaptive confidence gating: Holds back transient noise ($<0.60$ conf) during camera movement while allowing valid detections ($\ge 0.60$) to proceed.
+2. **`worker/pipeline/orchestrator.py`**:
+   - Integrated `DetectionFilter` between `detector.infer()` and `tracker.update()`.
+   - Telemetry tracks `raw_detections_count`, `operational_detections_count`, and `camera_motion_state`.
+3. **`worker/pipeline/visualizer.py`**:
+   - Top HUD telemetry banner displays: `RAW: X | OP: Y | TRK: Z | CAM: STABLE/MOVING`.
+   - Only verified operational targets are rendered as active track cards.
+4. **`tests/unit/test_detection_filter.py`**:
+   - 6 unit tests covering UNKNOWN rejection, class pass-through, geometric sanity, camera motion detection, and adaptive confidence gating.
+

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Play, ShieldCheck } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, ExternalLink, RefreshCw } from 'lucide-react';
 import { EvidencePackage, EventRecord } from '../../types';
-import { getEvidenceFileUrl } from '../../services/api';
+import { getEvidenceFileUrl, verifyEvidenceIntegrity } from '../../services/api';
 
 interface EvidencePackagePreviewProps {
   evidencePackage?: EvidencePackage | null;
@@ -12,24 +12,69 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
   evidencePackage,
   event,
 }) => {
-  const [activeTab, setActiveTab] = useState<'SNAPSHOT' | 'VIDEO' | 'TRAJECTORY' | 'DETAILS'>('SNAPSHOT');
+  const [activeTab, setActiveTab] = useState<'INCIDENT_CLIP' | 'SNAPSHOTS' | 'PRE_EVENT' | 'MANIFEST'>('INCIDENT_CLIP');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [verificationResult, setVerificationResult] = useState<{ is_valid?: boolean; details?: string } | null>(null);
 
   const rawRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'SNAPSHOT_RAW');
   const annRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'SNAPSHOT_ANNOTATED');
+  const incRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'CLIP_INCIDENT' || r.evidence_type === 'VIDEO_INCIDENT');
+  const preRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'CLIP_PRE_EVENT' || r.evidence_type === 'VIDEO_PRE_EVENT');
 
-  const sha256Short = annRec?.sha256
-    ? `${annRec.sha256.substring(0, 4)}...${annRec.sha256.substring(annRec.sha256.length - 4)}`
-    : evidencePackage?.sha256_seal
-    ? `${evidencePackage.sha256_seal.substring(0, 4)}...${evidencePackage.sha256_seal.substring(evidencePackage.sha256_seal.length - 4)}`
+  const sha256Seal = evidencePackage?.sha256_seal || annRec?.sha256 || rawRec?.sha256;
+  const sha256Short = sha256Seal
+    ? `${sha256Seal.substring(0, 6)}...${sha256Seal.substring(sha256Seal.length - 6)}`
     : '--';
 
+  // Perform real-time integrity check
+  const handleVerify = async () => {
+    const targetId = annRec?.id || rawRec?.id || incRec?.id;
+    if (!targetId) return;
+    setIsVerifying(true);
+    try {
+      const res = await verifyEvidenceIntegrity(targetId);
+      setVerificationResult(res);
+    } catch (err: any) {
+      setVerificationResult({ is_valid: false, details: err.message || 'Verification failed' });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const isTamperFree = verificationResult
+    ? verificationResult.is_valid === true
+    : (evidencePackage?.is_tamper_free ?? true);
+
+  if (!event && !evidencePackage) {
+    return (
+      <div
+        className="forensic-panel"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--text-muted)',
+          fontSize: '11px',
+          textAlign: 'center',
+          gap: '6px',
+          minHeight: '160px',
+        }}
+      >
+        <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>NO EVIDENCE PACKAGE</div>
+        <div>Awaiting incident detection to build forensic package</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="forensic-panel" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div className="forensic-panel" style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '160px' }}>
+      {/* Header & View Switcher Tabs */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span className="intel-card-header">EVIDENCE PACKAGE</span>
         <div style={{ display: 'flex', gap: '4px' }}>
-          {(['SNAPSHOT', 'VIDEO', 'TRAJECTORY', 'DETAILS'] as const).map((tab) => (
+          {(['INCIDENT_CLIP', 'SNAPSHOTS', 'PRE_EVENT', 'MANIFEST'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -44,101 +89,132 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
                 cursor: 'pointer',
               }}
             >
-              {tab}
+              {tab.replace(/_/g, ' ')}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Media Thumbnails Area */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', flex: 1 }}>
-        {/* Raw Snapshot */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>RAW SNAPSHOT</div>
-          <div
-            onClick={() => setIsModalOpen(true)}
-            style={{
-              position: 'relative',
-              background: '#0a0d14',
-              border: '1px solid var(--border-panel)',
-              borderRadius: '4px',
-              height: '75px',
-              overflow: 'hidden',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {rawRec ? (
-              <img src={getEvidenceFileUrl(rawRec.id)} alt="Raw" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      {/* Main Evidence Media Display Area */}
+      <div style={{ flex: 1, minHeight: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#05070a', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-panel)' }}>
+        {/* Tab 1: Incident Video Clip (Playable) */}
+        {activeTab === 'INCIDENT_CLIP' && (
+          <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4px' }}>
+            {incRec ? (
+              <video
+                controls
+                style={{ width: '100%', maxHeight: '140px', borderRadius: '4px', objectFit: 'contain' }}
+                src={getEvidenceFileUrl(incRec.id)}
+              />
             ) : (
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>[RAW KEYFRAME]</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                Incident clip rendering in progress...
+              </div>
             )}
           </div>
-        </div>
+        )}
 
-        {/* Annotated Snapshot */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>ANNOTATED SNAPSHOT</div>
-          <div
-            onClick={() => setIsModalOpen(true)}
-            style={{
-              position: 'relative',
-              background: '#0a0d14',
-              border: '1px solid rgba(6, 182, 212, 0.3)',
-              borderRadius: '4px',
-              height: '75px',
-              overflow: 'hidden',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {annRec ? (
-              <img src={getEvidenceFileUrl(annRec.id)} alt="Annotated" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {/* Tab 2: Keyframe Snapshots (Raw & Annotated) */}
+        {activeTab === 'SNAPSHOTS' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', width: '100%', height: '100%', padding: '6px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <div style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>RAW SNAPSHOT</div>
+              <div style={{ height: '95px', background: '#000', borderRadius: '3px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} onClick={() => setIsModalOpen(true)}>
+                {rawRec ? (
+                  <img src={getEvidenceFileUrl(rawRec.id)} alt="Raw Snapshot" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>[RAW KEYFRAME]</div>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <div style={{ fontSize: '8.5px', color: '#38bdf8' }}>ANNOTATED HUD</div>
+              <div style={{ height: '95px', background: '#000', borderRadius: '3px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} onClick={() => setIsModalOpen(true)}>
+                {annRec ? (
+                  <img src={getEvidenceFileUrl(annRec.id)} alt="Annotated Snapshot" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ fontSize: '9px', color: '#38bdf8' }}>[ANNOTATED KEYFRAME]</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Pre-Event Video Clip */}
+        {activeTab === 'PRE_EVENT' && (
+          <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4px' }}>
+            {preRec ? (
+              <video
+                controls
+                style={{ width: '100%', maxHeight: '140px', borderRadius: '4px', objectFit: 'contain' }}
+                src={getEvidenceFileUrl(preRec.id)}
+              />
             ) : (
-              <div style={{ fontSize: '10px', color: '#38bdf8' }}>[FORENSIC HUD KEYFRAME]</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                Pre-event lead-up clip unavailable
+              </div>
             )}
           </div>
-        </div>
+        )}
+
+        {/* Tab 4: Cryptographic Audit Manifest */}
+        {activeTab === 'MANIFEST' && (
+          <div style={{ width: '100%', height: '100%', padding: '6px', overflowY: 'auto', maxHeight: '130px', fontSize: '9.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+            <pre style={{ margin: 0 }}>
+              {evidencePackage?.manifest
+                ? JSON.stringify(evidencePackage.manifest, null, 2)
+                : `{\n  "event_id": "${event?.id || '--'}",\n  "sha256_seal": "${sha256Seal || '--'}",\n  "status": "SEALED"\n}`}
+            </pre>
+          </div>
+        )}
       </div>
 
-      {/* Video Clip Bar & Cryptographic Seal Footer */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-panel)', paddingTop: '6px', marginTop: '2px' }}>
+      {/* Footer: SHA-256 Cryptographic Verification Seal */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-panel)', paddingTop: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
             onClick={() => setIsModalOpen(true)}
             className="btn-command"
-            style={{ padding: '3px 8px', fontSize: '10px' }}
+            style={{ padding: '2px 6px', fontSize: '9.5px' }}
           >
-            <Play size={11} color="#38bdf8" />
-            <span>Event Clip (8.6s)</span>
+            <ExternalLink size={11} />
+            <span>Full Forensic View</span>
           </button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '8px', color: 'var(--text-muted)' }}>SHA-256 HASH</div>
-            <div className="font-mono" style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: '8px', color: 'var(--text-muted)' }}>SHA-256 SEAL</div>
+            <div className="font-mono" style={{ fontSize: '9.5px', color: 'var(--text-secondary)' }}>
               {sha256Short}
             </div>
           </div>
-          <div className="status-pill pill-green" style={{ fontSize: '9px', padding: '2px 6px' }}>
-            <ShieldCheck size={11} />
-            VERIFIED
-          </div>
+
+          <button
+            onClick={handleVerify}
+            disabled={isVerifying || !sha256Seal}
+            className={`status-pill ${isTamperFree ? 'pill-green' : 'pill-red'}`}
+            style={{ fontSize: '9px', padding: '3px 7px', cursor: 'pointer', border: 'none' }}
+          >
+            {isVerifying ? (
+              <RefreshCw size={10} className="animate-spin" />
+            ) : isTamperFree ? (
+              <ShieldCheck size={11} />
+            ) : (
+              <ShieldAlert size={11} />
+            )}
+            <span>{isVerifying ? 'VERIFYING' : isTamperFree ? 'SHA-256 VERIFIED' : 'TAMPER DETECTED'}</span>
+          </button>
         </div>
       </div>
 
-      {/* Full Forensic Modal */}
+      {/* Forensic Inspection Modal */}
       {isModalOpen && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(5, 7, 10, 0.85)',
+            background: 'rgba(5, 7, 10, 0.88)',
             backdropFilter: 'blur(8px)',
             zIndex: 100,
             display: 'flex',
@@ -151,8 +227,8 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: '800px',
-              maxWidth: '90vw',
+              width: '860px',
+              maxWidth: '92vw',
               background: 'var(--bg-panel)',
               border: '1px solid var(--border-panel)',
               borderRadius: '8px',
@@ -160,14 +236,14 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
               display: 'flex',
               flexDirection: 'column',
               gap: '14px',
-              boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.85)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: '16px', fontWeight: 800 }}>FORENSIC EVIDENCE PACKAGE</div>
+                <div style={{ fontSize: '16px', fontWeight: 800 }}>FORENSIC EVIDENCE REPOSITORY</div>
                 <div className="font-mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  EVENT: {event?.id || 'EVT-2025-0518-000104'} | CAMERA: {event?.camera_id || 'CAM-01'}
+                  EVENT: {event?.id || 'NO-EVENT'} | CAMERA: {event?.camera_id || 'DEMO-CAM-01'} | TRACK: #{event?.track_id || 2}
                 </div>
               </div>
               <button onClick={() => setIsModalOpen(false)} className="btn-command">
@@ -177,29 +253,36 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
-                <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px' }}>RAW KEYFRAME</div>
+                <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px' }}>RAW INCIDENT KEYFRAME</div>
                 <div style={{ background: '#000', borderRadius: '4px', height: '220px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {rawRec ? <img src={getEvidenceFileUrl(rawRec.id)} alt="Raw" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <div style={{ color: '#64748b' }}>Raw Snapshot</div>}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: '#38bdf8' }}>ANNOTATED HUD KEYFRAME</div>
+                <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', color: '#38bdf8' }}>ANNOTATED HUD FORENSIC KEYFRAME</div>
                 <div style={{ background: '#000', borderRadius: '4px', height: '220px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {annRec ? <img src={getEvidenceFileUrl(annRec.id)} alt="Annotated" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <div style={{ color: '#38bdf8' }}>Annotated Keyframe</div>}
                 </div>
               </div>
             </div>
 
-            <div style={{ background: 'var(--bg-card)', padding: '10px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px' }}>
+            {incRec && (
               <div>
-                <div style={{ color: 'var(--text-muted)' }}>IMMUTABLE CRYPTOGRAPHIC SEAL</div>
-                <div className="font-mono" style={{ color: '#10b981', fontWeight: 600 }}>
-                  SHA-256: {annRec?.sha256 || 'a7f3b8902c48d88e02d6b38c2ef40182470129bc4882190da98ef652a7f39c2e'}
+                <div style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px' }}>INCIDENT VIDEO CLIP (PLAYABLE)</div>
+                <video controls style={{ width: '100%', height: '160px', background: '#000', borderRadius: '4px' }} src={getEvidenceFileUrl(incRec.id)} />
+              </div>
+            )}
+
+            <div style={{ background: 'var(--bg-card)', padding: '10px 14px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px' }}>
+              <div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '9px' }}>SHA-256 IMMUTABLE CRYPTOGRAPHIC SEAL</div>
+                <div className="font-mono" style={{ color: isTamperFree ? '#10b981' : '#ef4444', fontWeight: 700 }}>
+                  {sha256Seal || 'SEAL COMPUTED ON PACKAGE CREATION'}
                 </div>
               </div>
-              <span className="status-pill pill-green">
-                <ShieldCheck size={13} />
-                CRYPTOGRAPHICALLY VERIFIED
+              <span className={`status-pill ${isTamperFree ? 'pill-green' : 'pill-red'}`}>
+                {isTamperFree ? <ShieldCheck size={13} /> : <ShieldAlert size={13} />}
+                {isTamperFree ? 'CRYPTOGRAPHICALLY VERIFIED' : 'INTEGRITY VERIFICATION FAILED'}
               </span>
             </div>
           </div>

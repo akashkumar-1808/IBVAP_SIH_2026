@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TopSystemBar } from './components/layout/TopSystemBar';
 import { SidebarNav } from './components/layout/SidebarNav';
 import { BottomStatusBar } from './components/layout/BottomStatusBar';
@@ -8,7 +8,7 @@ import { EventTimeline } from './components/console/EventTimeline';
 import { EventDetailsPanel } from './components/console/EventDetailsPanel';
 import { EvidencePackagePreview } from './components/console/EvidencePackagePreview';
 import { ActiveEventQueue } from './components/console/ActiveEventQueue';
-import { SectorMapPanel } from './components/console/SectorMapPanel';
+import { ActiveSecurityEventBanner } from './components/console/ActiveSecurityEventBanner';
 import { AddCameraModal } from './components/console/AddCameraModal';
 
 import {
@@ -17,7 +17,6 @@ import {
   EventRecord,
   EvidencePackage,
   TelemetryPacket,
-  DemonstrationScenario,
 } from './types';
 
 import {
@@ -25,8 +24,6 @@ import {
   fetchCameraCalibration,
   fetchEvents,
   fetchEventEvidence,
-  fetchScenarios,
-  runScenario,
   acknowledgeEvent,
   disconnectCamera,
 } from './services/api';
@@ -40,9 +37,10 @@ export const App: React.FC = () => {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null);
   const [evidencePackage, setEvidencePackage] = useState<EvidencePackage | null>(null);
-  const [scenarios, setScenarios] = useState<DemonstrationScenario[]>([]);
-  const [activeScenarioId, setActiveScenarioId] = useState<string>('');
   const [isAddCameraModalOpen, setIsAddCameraModalOpen] = useState<boolean>(false);
+
+  // Deduplication ref for high priority alert selection
+  const lastAlertedEventIdRef = useRef<string | null>(null);
 
   // Real-time live telemetry state from WebSocket
   const [telemetry, setTelemetry] = useState<TelemetryPacket>({
@@ -58,7 +56,7 @@ export const App: React.FC = () => {
 
   const [wsStatus, setWsStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING'>('RECONNECTING');
 
-  // 1. Initial Load: Cameras, Scenarios, Events
+  // 1. Initial Load: Cameras, Events
   useEffect(() => {
     fetchCameras()
       .then((cams) => {
@@ -66,10 +64,6 @@ export const App: React.FC = () => {
         if (cams.length > 0) setSelectedCameraId(cams[0].camera_id);
       })
       .catch((err) => console.warn('Failed to load cameras:', err));
-
-    fetchScenarios()
-      .then(setScenarios)
-      .catch((err) => console.warn('Failed to load scenarios:', err));
 
     fetchEvents()
       .then((evList) => {
@@ -109,13 +103,16 @@ export const App: React.FC = () => {
         return updated;
       });
 
-      // Auto-select latest critical/high event
-      const highEv = packet.active_events.find((e) => e.priority === 'CRITICAL' || e.priority === 'HIGH');
-      if (highEv && (!selectedEvent || selectedEvent.id !== highEv.id)) {
+      // Deduplicated auto-selection of newest high/critical event
+      const highEv = packet.active_events.find(
+        (e) => e.priority === 'CRITICAL' || e.priority === 'HIGH'
+      );
+      if (highEv && highEv.id !== lastAlertedEventIdRef.current) {
+        lastAlertedEventIdRef.current = highEv.id;
         setSelectedEvent(highEv);
       }
     }
-  }, [selectedEvent]);
+  }, []);
 
   useEffect(() => {
     const ws = new TelemetryWebSocket(
@@ -127,12 +124,19 @@ export const App: React.FC = () => {
     return () => ws.disconnect();
   }, [handleTelemetryPacket]);
 
-  // 4. Handle Event Selection & Evidence Fetch
+  // 4. Automatically fetch evidence package whenever selectedEvent changes
+  useEffect(() => {
+    if (selectedEvent?.id) {
+      fetchEventEvidence(selectedEvent.id)
+        .then(setEvidencePackage)
+        .catch(() => setEvidencePackage(null));
+    } else {
+      setEvidencePackage(null);
+    }
+  }, [selectedEvent?.id]);
+
   const handleSelectEvent = (ev: EventRecord) => {
     setSelectedEvent(ev);
-    fetchEventEvidence(ev.id)
-      .then(setEvidencePackage)
-      .catch(() => setEvidencePackage(null));
   };
 
   // 5. Handle Camera Connection Callback
@@ -163,17 +167,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // 7. Handle Scenario Run (Jury Replay)
-  const handleSelectScenario = async (scId: string) => {
-    setActiveScenarioId(scId);
-    try {
-      await runScenario(scId, 1.0);
-    } catch (err) {
-      console.warn('Failed to start scenario:', err);
-    }
-  };
-
-  // 8. Handle Event Acknowledge
+  // 7. Handle Event Acknowledge
   const handleAcknowledge = async (eventId: string) => {
     try {
       await acknowledgeEvent(eventId, 'Operator');
@@ -186,6 +180,9 @@ export const App: React.FC = () => {
   };
 
   const selectedCam = cameras.find((c) => c.camera_id === selectedCameraId);
+  const activeAlertEvent = telemetry.active_events.find(
+    (e) => e.priority === 'CRITICAL' || e.priority === 'HIGH'
+  ) || (selectedEvent && (selectedEvent.priority === 'CRITICAL' || selectedEvent.priority === 'HIGH') ? selectedEvent : null);
 
   return (
     <div className="app-container">
@@ -193,12 +190,11 @@ export const App: React.FC = () => {
       <TopSystemBar
         currentSector="SECTOR B-07"
         isLiveMode={wsStatus === 'CONNECTED'}
-        cameras={cameras}
+        camera={selectedCam}
+        cameraTelemetry={telemetry.camera}
+        environment={telemetry.environment}
         fps={telemetry.fps}
         systemHealth={wsStatus === 'CONNECTED' ? 'HEALTHY' : 'RECONNECTING'}
-        scenarios={scenarios}
-        activeScenarioId={activeScenarioId}
-        onSelectScenario={handleSelectScenario}
       />
 
       {/* Main Command Console 3-Column Grid */}
@@ -213,9 +209,18 @@ export const App: React.FC = () => {
           events={events}
         />
 
-        {/* Column 2: Center Primary Video & Intelligence Deck */}
+        {/* Column 2: Center Primary Video & Forensic Deck */}
         <section className="center-deck">
-          {/* Primary Live/Replay Video Player with SVG Overlays */}
+          {/* Prominent Real Active Security Event Alert (Driven by real EventRecord) */}
+          {activeAlertEvent && (
+            <ActiveSecurityEventBanner
+              event={activeAlertEvent}
+              onSelectEvent={handleSelectEvent}
+              onAcknowledge={handleAcknowledge}
+            />
+          )}
+
+          {/* Primary Live Video Player with OpenCV HUD stream */}
           <PrimaryVideoPanel
             cameraId={selectedCameraId}
             cameraName={selectedCam?.name || 'No Active Camera'}
@@ -226,34 +231,46 @@ export const App: React.FC = () => {
             spatialStates={telemetry.spatial_states}
             behaviors={telemetry.behavior_primitives}
             activeEvents={telemetry.active_events}
+            cameraTelemetry={telemetry.camera}
             onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
           />
 
-          {/* 5 Core Intelligence Pillars Deck */}
-          <IntelligenceCards
-            environment={telemetry.environment}
-            borderTrack={telemetry.border_track}
-            spatialState={telemetry.spatial_states[0]}
-            behaviors={telemetry.behavior_primitives}
-            activeEvent={telemetry.active_events[0] || selectedEvent}
-          />
-
-          {/* Bottom Forensic Row: Timeline | Details & "Why This Event?" | Evidence Package */}
+          {/* Bottom Forensic Row: Chronological Timeline | Details & "Why This Event?" | Evidence Package */}
           <div className="bottom-forensic-row">
-            <EventTimeline selectedEvent={selectedEvent} />
-            <EventDetailsPanel event={selectedEvent} onAcknowledge={handleAcknowledge} />
-            <EvidencePackagePreview evidencePackage={evidencePackage} event={selectedEvent} />
+            <EventTimeline
+              events={events}
+              selectedEvent={selectedEvent}
+              onSelectEvent={handleSelectEvent}
+            />
+            <EventDetailsPanel
+              event={selectedEvent}
+              onAcknowledge={handleAcknowledge}
+            />
+            <EvidencePackagePreview
+              evidencePackage={evidencePackage}
+              event={selectedEvent}
+            />
           </div>
         </section>
 
-        {/* Column 3: Right Panel: Active Event Queue & Sector Map */}
-        <section className="right-panel">
+        {/* Column 3: Right Panel: Active Event Queue & 6 Intelligence Pillars */}
+        <section className="right-panel" style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
+          {/* Active Security Incident Queue */}
           <ActiveEventQueue
             events={events}
             selectedEventId={selectedEvent?.id}
             onSelectEvent={handleSelectEvent}
           />
-          <SectorMapPanel cameras={cameras} borderTrack={telemetry.border_track} />
+
+          {/* 6 Authoritative Intelligence Pillars from Telemetry */}
+          <IntelligenceCards
+            environment={telemetry.environment}
+            tracks={telemetry.tracks}
+            selectedTrack={telemetry.tracks.length > 0 ? telemetry.tracks[0] : null}
+            spatialStates={telemetry.spatial_states}
+            behaviors={telemetry.behavior_primitives}
+            activeEvent={telemetry.active_events[0] || selectedEvent}
+          />
         </section>
       </main>
 

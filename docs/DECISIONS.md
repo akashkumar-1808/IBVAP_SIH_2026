@@ -177,5 +177,29 @@ This document tracks all formal architectural and engineering decisions made dur
   - **Pro:** Complete transparency and explainability; zero mock AI; high performance; responsive command room visual feel.
   - **Con:** Multi-camera live streams share browser connections; optimized with MJPEG + WebSocket pub/sub.
 - **Affected Components:** `frontend/`, `backend/app/api/routes/`, `backend/app/main.py`, `docs/IBVAP_memory.md`.
+---
 
+## [DEC-0012] Basic Detection Stabilization and Camera Motion Filtering
+- **Date:** 2026-08-31
+- **Status:** APPROVED & IMPLEMENTED
+- **Context:** During daytime and live camera movement testing, camera motion produced transient visual detections. Furthermore, non-supported COCO classes normalized to `TargetClass.UNKNOWN` were reaching ByteTrack and spawning unwanted candidate/tracked entities, cluttering the live prototype.
+- **Decision:**
+  1. **Operational vs. Raw Detection Isolation (`worker/perception/filter.py`)**:
+     - Introduced `DetectionFilter` between `Class Normalization` and `ByteTrackTracker`.
+     - `TargetClass.UNKNOWN` detections are strictly excluded from operational tracking while preserved in `raw_detections` for forensic logging, anomaly analysis, and telemetry.
+     - Only valid operational targets (`PERSON`, `VEHICLE`, `ANIMAL`) meeting geometric quality thresholds (non-zero width/height, $\ge 8$ px dimensions, $\ge 64$ px$^2$ area, within frame bounds) proceed to ByteTrack.
+  2. **Lightweight Camera Motion Check (`CameraMotionEstimator`)**:
+     - Sub-millisecond ($<0.4$ ms) optical flow motion estimator on downscaled ($160	imes 120$) grayscale frames.
+     - Distinguishes `CAMERA STABLE` vs. `CAMERA MOVING`.
+     - When `CAMERA MOVING`, transient/weak detections below dynamic threshold ($0.60$) are held back from spawning candidate tracks, while strong targets ($\ge 0.60$) proceed normally.
+     - When `CAMERA STABLE`, baseline threshold ($0.35$) applies.
+  3. **Diagnostic HUD Counters**:
+     - Live HUD top telemetry displays: `RAW: X | OP: Y | TRK: Z | CAM: STABLE/MOVING`.
+     - Only operational targets are drawn as tracked entities.
+  4. **Deferred Night Perception Notice**:
+     - "Normal/daytime perception stabilization was implemented. Night/low-light perception remains unchanged and is intentionally deferred."
+- **Trade-offs:**
+  - **Pro:** Completely eliminates clutter and spurious tracks from unsupported classes and camera pans; preserves 100% of raw forensic detections; zero model modification or latency penalty (<0.4ms overhead).
+  - **Con:** Requires small motion estimation window (1 frame history).
+- **Affected Components:** `worker/perception/filter.py`, `worker/perception/__init__.py`, `worker/pipeline/orchestrator.py`, `worker/pipeline/visualizer.py`, `tests/unit/test_detection_filter.py`, `docs/DECISIONS.md`, `docs/IBVAP_memory.md`.
 

@@ -21,19 +21,26 @@ export async function fetchCameras(): Promise<CameraInfo[]> {
 export async function connectCamera(params: {
   camera_id: string;
   name: string;
-  rtsp_url: string;
+  rtsp_url?: string;
+  video_file_path?: string;
   sector_id?: string;
   sector_name?: string;
   device?: string;
 }): Promise<{ status: string; message: string; camera: CameraInfo }> {
+  const payload: any = { ...params };
+  if (params.rtsp_url && !params.video_file_path && (params.rtsp_url.endsWith('.mp4') || !params.rtsp_url.startsWith('rtsp://'))) {
+    payload.video_file_path = params.rtsp_url;
+    delete payload.rtsp_url;
+  }
+
   const res = await fetch(`${API_BASE}/cameras/connect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'Failed to connect RTSP camera');
+    throw new Error(err.detail || 'Failed to connect camera');
   }
   return res.json();
 }

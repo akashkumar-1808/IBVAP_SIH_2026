@@ -188,6 +188,14 @@ class GroundContactPoint(BaseModel):
     method: GroundReferenceMethod = GroundReferenceMethod.BOTTOM_CENTER
     confidence: SpatialConfidence = SpatialConfidence.VALID
 
+    @property
+    def x(self) -> float:
+        return float(self.pixel_xy[0])
+
+    @property
+    def y(self) -> float:
+        return float(self.pixel_xy[1])
+
 
 # ── Crossing Event ────────────────────────────────────────────────────────────
 

@@ -46,6 +46,9 @@ export interface TrackState {
   velocity_xy?: [number, number];
   speed_pixels_per_sec?: number;
   age_frames: number;
+  persistence?: number;
+  confidence?: number;
+  ground_point?: { x: number; y: number };
   status: TrackStatus;
   first_seen?: string;
   last_seen?: string;
@@ -56,6 +59,7 @@ export interface TrackState {
 export interface SpatialState {
   camera_id: string;
   track_id: number;
+  border_id?: string;
   timestamp_utc?: string;
   border_side: BorderSide;
   crossing_status: CrossingStatus;
@@ -85,6 +89,8 @@ export interface EnvironmentState {
   contrast?: number;
   noise_estimate?: number;
   blur_score?: number;
+  weather_hint?: string;
+  uncertainty_flags?: string[];
 }
 
 export interface BorderTrack {
@@ -123,6 +129,7 @@ export interface EventRecord {
   first_observed_utc?: string;
   last_observed_utc?: string;
   duration_seconds?: number;
+  confidence?: number;
   detection_confidence?: number;
   track_confidence?: number;
   spatial_confidence?: number;
@@ -138,7 +145,7 @@ export interface EvidenceRecord {
   id: string;
   event_id: string;
   camera_id: string;
-  evidence_type: 'SNAPSHOT_RAW' | 'SNAPSHOT_ANNOTATED' | 'VIDEO_PRE_EVENT' | 'VIDEO_INCIDENT' | 'AUDIT_MANIFEST';
+  evidence_type: 'SNAPSHOT_RAW' | 'SNAPSHOT_ANNOTATED' | 'VIDEO_PRE_EVENT' | 'VIDEO_INCIDENT' | 'AUDIT_MANIFEST' | 'CLIP_PRE_EVENT' | 'CLIP_INCIDENT' | 'MANIFEST';
   storage_reference: string;
   sha256: string;
   is_verified: boolean;
@@ -151,6 +158,7 @@ export interface EvidencePackage {
   camera_id: string;
   status: string;
   is_sealed: boolean;
+  is_tamper_free?: boolean;
   sha256_seal?: string;
   created_at_utc?: string;
   evidence_records: EvidenceRecord[];
@@ -179,18 +187,63 @@ export interface CameraCalibration {
   reprojection_error_px?: number;
 }
 
+export interface CameraContract {
+  camera_id: string;
+  source_type: string;
+  connection_status: string;
+  resolution: string;
+  capture_fps: number;
+  processing_fps: number;
+  output_fps: number;
+  processing_latency_ms: number;
+  frame_timestamp: string;
+  frame_age_ms: number;
+}
+
 export interface TelemetryPacket {
   camera_id: string;
   timestamp_utc: string;
   fps: number;
   is_calibrated: boolean;
   scenario_id?: string;
+  camera?: CameraContract;
   environment?: EnvironmentState;
+  detections?: Array<{
+    class: string;
+    confidence: number;
+    bbox: BoundingBox;
+    frame_id: number;
+  }>;
   tracks: TrackState[];
+  spatial?: Array<{
+    track_id: number;
+    border_id: string;
+    zone: string;
+    border_side: string;
+    distance_to_border: number;
+    movement_direction: string;
+    crossing_status: string;
+  }>;
   spatial_states: SpatialState[];
+  behavior?: Array<{
+    track_id: number;
+    behavior_type: string;
+    confidence: number;
+    duration: number;
+  }>;
   behavior_primitives: BehaviorPrimitive[];
   border_track?: BorderTrack;
   sector_context?: SectorContext;
+  events?: Array<{
+    event_id: string;
+    event_type: string;
+    priority: string;
+    risk_score: number;
+    confidence: number;
+    track_id: number;
+    reason_codes: string[];
+    explanation_summary: string;
+  }>;
   active_events: EventRecord[];
 }
 

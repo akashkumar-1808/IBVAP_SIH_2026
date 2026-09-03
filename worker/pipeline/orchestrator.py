@@ -34,7 +34,7 @@ from worker.ingestion import (
     mask_rtsp_url,
 )
 from worker.environment import EnvironmentAnalyzer, EnvironmentConfig, EnvironmentState
-from worker.perception import ObjectDetector, Detection
+from worker.perception import ObjectDetector, Detection, DetectionFilter, DetectionFilterConfig, CameraMotionEstimator, CameraMotionInfo
 from worker.tracking import ByteTrackTracker, TrackState
 from worker.spatial import (
     SpatialEngine,
@@ -77,6 +77,11 @@ class LivePipelineOrchestrator:
         self.queue = BoundedFrameQueue(max_size=config.queue_max_size)
         self.environment_analyzer = EnvironmentAnalyzer()
         self.detector = ObjectDetector(model_path=config.model_path, device=config.device, confidence_threshold=config.detection_confidence)
+        self.detection_filter = DetectionFilter(DetectionFilterConfig(min_confidence=config.detection_confidence))
+        self.camera_motion_estimator = CameraMotionEstimator()
+        self._latest_raw_detections_count = 0
+        self._latest_operational_detections_count = 0
+        self._latest_camera_motion = CameraMotionInfo()
         self.tracker = ByteTrackTracker()
         self.spatial_engine = SpatialEngine()
         self.behavior_engine = BehaviorEngine()
@@ -120,42 +125,49 @@ class LivePipelineOrchestrator:
         points_world: Optional[List[Tuple[float, float]]] = None,
         correspondences: Optional[List[Tuple[float, float, float, float]]] = None,
     ) -> None:
-        """Configures a real calibrated world-border for live camera testing."""
-        pts = points_world or [(-20.0, 15.0), (0.0, 15.0), (20.0, 15.0)]
-        section = BorderSection(
-            id=border_section_id,
-            name="Live Prototype Sector Alpha Border",
-            points=[WorldPoint(x=x, y=y) for x, y in pts],
-            permitted_side_normal=(0.0, -1.0),
-            warning_buffer_distance=5.0,
-            coordinate_reference=CoordinateReference.LOCAL_CARTESIAN,
-            terrain_mode=TerrainMode.PLANAR_GROUND,
-        )
+        """Configures a real calibrated world-border and local zones for live camera testing."""
+        try:
+            from configs.demo_border_config import build_world_border_components, build_camera_spatial_config
+            section, reg, cal = build_world_border_components(self.config.camera_id, border_section_id)
+            spatial_cfg = build_camera_spatial_config(self.config.camera_id)
+            self.spatial_engine.configure_camera(spatial_cfg)
+        except Exception as exc:
+            logger.warning(f"Using default fallback border calibration: {exc}")
+            pts = points_world or [(-20.0, 15.0), (0.0, 15.0), (20.0, 15.0)]
+            section = BorderSection(
+                id=border_section_id,
+                name="Live Prototype Sector Alpha Border",
+                points=[WorldPoint(x=x, y=y) for x, y in pts],
+                permitted_side_normal=(0.0, -1.0),
+                warning_buffer_distance=5.0,
+                coordinate_reference=CoordinateReference.LOCAL_CARTESIAN,
+                terrain_mode=TerrainMode.PLANAR_GROUND,
+            )
 
-        corr_tuples = correspondences or [
-            (-15.0, 10.0, 80.0, 360.0),
-            (15.0, 10.0, 560.0, 360.0),
-            (15.0, 30.0, 480.0, 200.0),
-            (-15.0, 30.0, 160.0, 200.0),
-        ]
-        cal = CameraCalibration(
-            camera_id=self.config.camera_id,
-            image_width=640,
-            image_height=480,
-            calibration_version="live_v1.0",
-            calibration_model=CalibrationModel.PLANAR_HOMOGRAPHY,
-            correspondences=[
-                CalibrationCorrespondence(world_point=WorldPoint(x=wx, y=wy), image_point=(ix, iy))
-                for wx, wy, ix, iy in corr_tuples
-            ],
-        )
+            corr_tuples = correspondences or [
+                (-15.0, 10.0, 80.0, 360.0),
+                (15.0, 10.0, 560.0, 360.0),
+                (15.0, 30.0, 480.0, 200.0),
+                (-15.0, 30.0, 160.0, 200.0),
+            ]
+            cal = CameraCalibration(
+                camera_id=self.config.camera_id,
+                image_width=640,
+                image_height=480,
+                calibration_version="live_v1.0",
+                calibration_model=CalibrationModel.PLANAR_HOMOGRAPHY,
+                correspondences=[
+                    CalibrationCorrespondence(world_point=WorldPoint(x=wx, y=wy), image_point=(ix, iy))
+                    for wx, wy, ix, iy in corr_tuples
+                ],
+            )
 
-        from worker.spatial.world_schemas import CalibrationStatus
-        reg = CameraRegistration(
-            camera_id=self.config.camera_id,
-            visible_border_sections=[border_section_id],
-            calibration_status=CalibrationStatus.CALIBRATED,
-        )
+            from worker.spatial.world_schemas import CalibrationStatus
+            reg = CameraRegistration(
+                camera_id=self.config.camera_id,
+                visible_border_sections=[border_section_id],
+                calibration_status=CalibrationStatus.CALIBRATED,
+            )
 
         self.spatial_engine.register_border_section(section)
         self.spatial_engine.register_camera(reg)
@@ -178,6 +190,7 @@ class LivePipelineOrchestrator:
             self.source = FileVideoSource(
                 camera_id=self.config.camera_id,
                 file_path=self.config.file_path,
+                loop=True,
                 realtime_pacing=True,
             )
         else:
@@ -190,6 +203,13 @@ class LivePipelineOrchestrator:
         health = self.source.get_health()
         print(f"Stream Health: {health.state.value.upper()} | FPS: {health.fps_measured:.1f}")
 
+        # Execute detector warmup during source initialization so cold-start doesn't delay live playback
+        try:
+            self.detector.load()
+            self.detector.warmup()
+        except Exception as exc:
+            logger.warning(f"Detector warmup encountered non-fatal notice: {exc}")
+
     def run(self) -> PipelineMetrics:
         """Main execution entrypoint for live processing."""
         self._is_running = True
@@ -197,9 +217,10 @@ class LivePipelineOrchestrator:
         # Print Startup Banner
         self._print_startup_banner()
 
-        # Initialize detector warmup
-        self.detector.load()
-        self.detector.warmup()
+        # Ensure detector is loaded and warmed up
+        if not getattr(self.detector, "_warmup_done", False):
+            self.detector.load()
+            self.detector.warmup()
 
         # Start runtime clock after warmup is complete
         self._start_time = datetime.now(timezone.utc)
@@ -214,26 +235,21 @@ class LivePipelineOrchestrator:
                         print(f"\nMax runtime of {self.config.max_runtime_seconds:.1f}s reached. Initiating shutdown...")
                         break
 
-                # 2. Ingest Frame Packet
-                packet = self.source.read()
+                # 2. Check for pre-seeded frame or Ingest from Video Source
+                packet = self.queue.get(timeout=0.001)
                 if packet is None:
-                    if isinstance(self.source, FileVideoSource):
-                        print("\nEnd of video stream reached.")
-                        break
-                    # RTSP stream reconnecting/transient drop
-                    time.sleep(0.01)
-                    continue
-
-                self.metrics.frames_received += 1
-                self.queue.put(packet)
-
-                # 3. Process from Queue
-                frame_packet = self.queue.get()
-                if frame_packet is None:
-                    continue
+                    packet = self.source.read()
+                    if packet is None:
+                        if isinstance(self.source, FileVideoSource):
+                            print("\nEnd of video stream reached.")
+                            break
+                        # RTSP stream reconnecting/transient drop
+                        time.sleep(0.01)
+                        continue
+                    self.metrics.frames_received += 1
 
                 t_frame_start = time.perf_counter()
-                self._process_single_frame(frame_packet)
+                self._process_single_frame(packet)
                 t_frame_end = time.perf_counter()
 
                 total_ms = (t_frame_end - t_frame_start) * 1000.0
@@ -274,14 +290,24 @@ class LivePipelineOrchestrator:
         self._latest_environment = env_state
         self._stage_latencies_history["environment"].append((time.perf_counter() - t0) * 1000.0)
 
-        # Stage 2: Object Detection (YOLOv8n)
+        # Stage 2: Object Detection (YOLOv8n) & Basic Stabilization Filtering
         t0 = time.perf_counter()
-        detections = self.detector.infer(packet)
+        raw_detections = self.detector.infer(packet)
+        camera_motion = self.camera_motion_estimator.update(img)
+        filter_result = self.detection_filter.filter_detections(
+            raw_detections=raw_detections,
+            image_shape=img.shape,
+            camera_motion=camera_motion,
+        )
+        operational_detections = filter_result.operational_detections
+        self._latest_raw_detections_count = len(raw_detections)
+        self._latest_operational_detections_count = len(operational_detections)
+        self._latest_camera_motion = camera_motion
         self._stage_latencies_history["detection"].append((time.perf_counter() - t0) * 1000.0)
 
-        # Stage 3: Multi-Object Tracking (ByteTrack)
+        # Stage 3: Multi-Object Tracking (ByteTrack) - operational targets only
         t0 = time.perf_counter()
-        tracks = self.tracker.update(detections, camera_id=cam_id, timestamp_utc=ts, frame_id=frame_id)
+        tracks = self.tracker.update(operational_detections, camera_id=cam_id, timestamp_utc=ts, frame_id=frame_id)
         self._stage_latencies_history["tracking"].append((time.perf_counter() - t0) * 1000.0)
 
         for tr in tracks:
@@ -323,10 +349,17 @@ class LivePipelineOrchestrator:
                     matching_tr = next((t for t in tracks if t.track_id == ev.track_id), None)
                     matching_sp = next((s for s in spatial_states if s.track_id == ev.track_id), None)
                     if matching_tr and matching_sp:
-                        pkg = self.evidence_packager.create_package(ev, matching_tr, matching_sp)
-                        self.metrics.total_evidence_packages += 1
-                        seal_preview = pkg.sha256_seal[:16] if pkg.sha256_seal else "sealed"
-                        print(f"Evidence Package Sealed: {pkg.id} [SHA-256: {seal_preview}...]")
+                        import threading
+                        def _async_package(e_copy, tr_copy, sp_copy):
+                            try:
+                                pkg = self.evidence_packager.create_package(e_copy, tr_copy, sp_copy)
+                                self.metrics.total_evidence_packages += 1
+                                seal_preview = pkg.sha256_seal[:16] if pkg.sha256_seal else "sealed"
+                                print(f"Evidence Package Sealed: {pkg.id} [SHA-256: {seal_preview}...]")
+                            except Exception as ex:
+                                logger.error(f"Async evidence packaging error: {ex}")
+
+                        threading.Thread(target=_async_package, args=(ev, matching_tr, matching_sp), daemon=True).start()
 
                 if not any(e.id == ev.id for e in self._recorded_events):
                     self._recorded_events.append(ev)
@@ -335,8 +368,9 @@ class LivePipelineOrchestrator:
 
         # Stage 8: Visualization Rendering & OpenCV Display
         t0 = time.perf_counter()
-        if self.config.run_mode in (RunMode.VISUAL, RunMode.RECORD_DEBUG):
-            fps_val = len(self._fps_window) / 2.0 if self._fps_window else 0.0
+        fps_val = len(self._fps_window) / 2.0 if self._fps_window else 0.0
+        vis_img = None
+        if self.on_frame_processed or self.config.run_mode in (RunMode.VISUAL, RunMode.RECORD_DEBUG):
             vis_img = self.visualizer.render_frame(
                 frame=img,
                 tracks=tracks,
@@ -347,6 +381,9 @@ class LivePipelineOrchestrator:
                 projected_border=self._latest_projected_border,
                 is_calibrated=self._is_calibrated,
                 fps=fps_val,
+                raw_detections_count=self._latest_raw_detections_count,
+                operational_detections_count=self._latest_operational_detections_count,
+                camera_motion=self._latest_camera_motion,
             )
 
             # Show window in VISUAL mode
@@ -368,18 +405,30 @@ class LivePipelineOrchestrator:
 
         # Stage 9: External Telemetry / Streaming Hook
         if self.on_frame_processed and callable(self.on_frame_processed):
-            fps_val = len(self._fps_window) / 2.0 if self._fps_window else 0.0
             try:
-                self.on_frame_processed(
-                    packet=packet,
-                    env_state=env_state,
-                    detections=detections,
-                    tracks=tracks,
-                    spatial_states=spatial_states,
-                    behaviors=behaviors,
-                    events=events,
-                    fps=fps_val,
-                )
+                try:
+                    self.on_frame_processed(
+                        packet=packet,
+                        env_state=env_state,
+                        detections=operational_detections,
+                        tracks=tracks,
+                        spatial_states=spatial_states,
+                        behaviors=behaviors,
+                        events=events,
+                        fps=fps_val,
+                        vis_image=vis_img,
+                    )
+                except TypeError:
+                    self.on_frame_processed(
+                        packet=packet,
+                        env_state=env_state,
+                        detections=operational_detections,
+                        tracks=tracks,
+                        spatial_states=spatial_states,
+                        behaviors=behaviors,
+                        events=events,
+                        fps=fps_val,
+                    )
             except Exception as e:
                 logger.warning(f"Error in on_frame_processed hook: {e}")
 
@@ -414,6 +463,8 @@ class LivePipelineOrchestrator:
         print(f"IBVAP LIVE STATUS | Cam: {self.config.camera_id} | Health: {h_str}")
         print(f"FPS: {fps:.1f} | Frame: {self.metrics.frames_processed} | Dropped: {self.metrics.frames_dropped}")
         print(f"Environment: Light: {light_str} | Vis: {vis_str}")
+        cam_motion_str = self._latest_camera_motion.state.value if hasattr(self._latest_camera_motion, 'state') else 'STABLE'
+        print(f"Perception:   Raw: {self._latest_raw_detections_count} | Operational: {self._latest_operational_detections_count} | Camera: {cam_motion_str}")
         print(f"Active Tracks ({len(active_tracks)}):")
         for tr in active_tracks[:3]:
             print(f"  #{tr.track_id} {tr.class_id.value.upper()} (age: {tr.age_frames})")

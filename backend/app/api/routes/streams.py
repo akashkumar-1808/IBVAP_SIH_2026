@@ -19,7 +19,7 @@ _LATEST_FRAMES: Dict[str, tuple[bytes, float]] = {}
 
 def update_latest_frame(camera_id: str, frame_bgr: np.ndarray) -> None:
     """Helper called by pipeline or scenarios to update the live stream buffer."""
-    _, encoded = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, encoded = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 75])
     _LATEST_FRAMES[camera_id] = (encoded.tobytes(), time.time())
 
 

@@ -1,27 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Radio, Activity, Eye } from 'lucide-react';
-import { CameraInfo, DemonstrationScenario } from '../../types';
+import { Shield, Activity, Eye, Video } from 'lucide-react';
+import { CameraInfo, CameraContract, EnvironmentState } from '../../types';
 
 interface TopSystemBarProps {
   currentSector: string;
   isLiveMode: boolean;
-  cameras: CameraInfo[];
+  camera?: CameraInfo | null;
+  cameraTelemetry?: CameraContract;
+  environment?: EnvironmentState;
   fps: number;
   systemHealth: string;
-  scenarios: DemonstrationScenario[];
-  activeScenarioId?: string;
-  onSelectScenario: (scenarioId: string) => void;
 }
 
 export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   currentSector,
   isLiveMode,
-  cameras,
+  camera,
+  cameraTelemetry,
+  environment,
   fps,
   systemHealth,
-  scenarios,
-  activeScenarioId,
-  onSelectScenario,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
 
@@ -39,12 +37,20 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const onlineCameras = cameras.filter((c) => c.status === 'ONLINE').length;
+  const isOnline = cameraTelemetry ? cameraTelemetry.connection_status === 'ONLINE' : (camera?.status === 'ONLINE');
+  const camId = cameraTelemetry?.camera_id || camera?.camera_id || 'DEMO-CAM-01';
+  const sourceType = cameraTelemetry?.source_type || 'MP4 REPLAY';
+  const captureFps = cameraTelemetry?.capture_fps ? cameraTelemetry.capture_fps.toFixed(1) : (fps > 0 ? fps.toFixed(1) : '--');
+  const processingFps = cameraTelemetry?.processing_fps ? cameraTelemetry.processing_fps.toFixed(1) : (fps > 0 ? fps.toFixed(1) : '--');
+  const latencyMs = cameraTelemetry?.processing_latency_ms ? `${cameraTelemetry.processing_latency_ms.toFixed(0)}ms` : '--';
+  const frameAgeMs = cameraTelemetry?.frame_age_ms !== undefined ? `${cameraTelemetry.frame_age_ms.toFixed(0)}ms` : '--';
+  const lighting = environment?.lighting || 'DAYLIGHT';
+  const visibility = environment?.visibility || 'HIGH';
 
   return (
     <header className="top-bar">
-      {/* Brand & Sector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      {/* Brand & Active Camera */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div
             style={{
@@ -63,89 +69,81 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
           </div>
           <div>
             <div style={{ fontWeight: 800, fontSize: '13px', letterSpacing: '0.05em' }}>IBVAP</div>
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)', lineHeight: 1 }}>COMMAND CONSOLE</div>
+            <div style={{ fontSize: '9px', color: 'var(--text-muted)', lineHeight: 1 }}>OPERATOR CONSOLE</div>
           </div>
         </div>
 
         <div style={{ width: '1px', height: '24px', background: 'var(--border-panel)' }} />
 
         <div>
-          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>{currentSector}</div>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Northern Border Sector</div>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>{camId}</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>({currentSector})</span>
+          </div>
+          <div style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Video size={10} color="var(--accent-cyan)" />
+            <span>SOURCE: {sourceType}</span>
+          </div>
         </div>
 
-        <div className={`status-pill ${isLiveMode ? 'pill-green' : 'pill-amber'}`}>
-          <Radio size={12} className={isLiveMode ? 'animate-pulse' : ''} />
-          {isLiveMode ? 'LIVE' : 'REPLAY'}
+        <div className={`status-pill ${isOnline ? 'pill-green' : 'pill-red'}`}>
+          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#ef4444', display: 'inline-block' }} />
+          {isOnline ? 'ONLINE' : 'OFFLINE'}
         </div>
       </div>
 
-      {/* Center Operational Metrics */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      {/* Center Operational Telemetry Metrics */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontFamily: 'var(--font-mono)' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
-            {String(onlineCameras).padStart(2, '0')} / {String(cameras.length).padStart(2, '0')}
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8' }}>
+            {captureFps} / {processingFps}
           </div>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Cameras Online</div>
+          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CAP / PROC FPS</div>
         </div>
 
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
-            {fps > 0 ? fps.toFixed(1) : '--'} FPS
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#a78bfa' }}>
+            {latencyMs}
           </div>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pipeline Rate</div>
+          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>LATENCY</div>
         </div>
 
         <div style={{ textAlign: 'center' }}>
-          <div className="status-pill pill-green">
-            <Activity size={10} />
-            {systemHealth}
+          <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981' }}>
+            {frameAgeMs}
           </div>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '2px' }}>
-            System Health
-          </div>
+          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>FRAME AGE</div>
         </div>
 
-        {/* Jury Demo Scenario Switcher */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>
-          <select
-            value={activeScenarioId || ''}
-            onChange={(e) => onSelectScenario(e.target.value)}
-            style={{
-              background: 'var(--bg-card)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-panel)',
-              borderRadius: '4px',
-              padding: '4px 8px',
-              fontSize: '11px',
-              outline: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="" disabled>Select Jury Demo Scenario...</option>
-            {scenarios.map((sc) => (
-              <option key={sc.id} value={sc.id}>
-                ▶ {sc.title}
-              </option>
-            ))}
-          </select>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            {lighting} · {visibility}
+          </div>
+          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>ENVIRONMENT</div>
+        </div>
+
+        <div style={{ textAlign: 'center' }}>
+          <div className={`status-pill ${isLiveMode ? 'pill-green' : 'pill-amber'}`} style={{ fontSize: '9px', padding: '1px 6px' }}>
+            <Activity size={9} />
+            {isLiveMode ? systemHealth : 'CONNECTING'}
+          </div>
         </div>
       </div>
 
-      {/* Right Time & Operator Profile */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+      {/* Right UTC Clock & Control Room Profile */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{timeStr}</div>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>UTC SYNCHRONIZED</div>
+          <div style={{ fontSize: '11.5px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{timeStr}</div>
+          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>UTC SYNCHRONIZED</div>
         </div>
 
         <div style={{ width: '1px', height: '24px', background: 'var(--border-panel)' }} />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
           <div
             style={{
-              width: '28px',
-              height: '28px',
+              width: '26px',
+              height: '26px',
               borderRadius: '50%',
               background: 'rgba(255, 255, 255, 0.08)',
               border: '1px solid rgba(255, 255, 255, 0.15)',
@@ -155,11 +153,11 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
               color: 'var(--text-secondary)',
             }}
           >
-            <Eye size={14} />
+            <Eye size={13} />
           </div>
           <div>
-            <div style={{ fontSize: '11px', fontWeight: 600 }}>OPERATOR</div>
-            <div style={{ fontSize: '9px', color: 'var(--accent-cyan)' }}>CONTROL ROOM</div>
+            <div style={{ fontSize: '10.5px', fontWeight: 600 }}>OPERATOR</div>
+            <div style={{ fontSize: '8.5px', color: 'var(--accent-cyan)' }}>CONTROL ROOM</div>
           </div>
         </div>
       </div>

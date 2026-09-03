@@ -78,14 +78,50 @@ def get_event_evidence(event_id: str):
         except Exception:
             pass
 
-    status_str = "sealed" if evidence_records else "pending"
-    sha256_seal = manifest_data.get("sealed_at_utc") if manifest_data else None
+    if manifest_data and not evidence_records:
+        from datetime import timezone
+        for art in manifest_data.get("artifacts", []):
+            f_name = art.get("file_name", "")
+            if "raw" in f_name:
+                ev_type = "SNAPSHOT_RAW"
+            elif "annotated" in f_name:
+                ev_type = "SNAPSHOT_ANNOTATED"
+            elif "incident" in f_name:
+                ev_type = "INCIDENT_CLIP"
+            elif "pre" in f_name:
+                ev_type = "PRE_EVENT_CLIP"
+            else:
+                ev_type = "MANIFEST"
+
+            rec_id = f"ev_rec_{event_id}_{ev_type.lower()}"
+            file_path = os.path.join("storage", "evidence", camera_id, event_id, f_name)
+            rec = {
+                "id": rec_id,
+                "event_id": event_id,
+                "camera_id": camera_id,
+                "evidence_type": ev_type,
+                "storage_reference": file_path,
+                "mime_type": art.get("file_type", "application/octet-stream"),
+                "sha256": art.get("sha256_hash", ""),
+                "file_size_bytes": art.get("file_size_bytes", 0),
+                "status": "sealed",
+                "created_at": manifest_data.get("sealed_at_utc") or datetime.now(timezone.utc).isoformat(),
+            }
+            evidence_repo.insert(rec)
+            evidence_records.append(rec)
+
+    status_str = "sealed" if (evidence_records or manifest_data) else "pending"
+    sha256_seal = (
+        manifest_data.get("artifacts", [{}])[-1].get("sha256_hash")
+        if manifest_data and manifest_data.get("artifacts")
+        else (manifest_data.get("sealed_at_utc") if manifest_data else None)
+    )
 
     return EvidencePackageResponse(
         event_id=event_id,
         camera_id=camera_id,
         status=status_str,
-        is_sealed=True if evidence_records else False,
+        is_sealed=True if (evidence_records or manifest_data) else False,
         sha256_seal=sha256_seal,
         created_at_utc=ev.get("created_at") or ev.get("timestamp_utc"),
         evidence_records=evidence_records,

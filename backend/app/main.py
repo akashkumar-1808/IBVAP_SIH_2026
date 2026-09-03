@@ -63,9 +63,22 @@ def create_app() -> FastAPI:
     dist_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
     if os.path.exists(dist_dir):
         app.mount("/console", StaticFiles(directory=dist_dir, html=True), name="console")
+        assets_dir = os.path.join(dist_dir, "assets")
+        if os.path.exists(assets_dir):
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "storage"))
+    if os.path.exists(storage_dir):
+        app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
+
+    from fastapi import Request
 
     @app.get("/", tags=["Root"])
-    async def root():
+    async def root(request: Request):
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept and os.path.exists(dist_dir):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/console")
         return {
             "name": settings.APP_NAME,
             "version": "0.1.0",

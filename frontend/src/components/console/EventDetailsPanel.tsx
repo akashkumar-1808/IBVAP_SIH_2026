@@ -54,36 +54,36 @@ export const EventDetailsPanel: React.FC<EventDetailsPanelProps> = ({ event, onA
           {ev.event_type.replace(/_/g, ' ')}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '10.5px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--text-muted)' }}>EVENT ID</span>
             <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{ev.id}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-muted)' }}>TIME</span>
+            <span style={{ color: 'var(--text-muted)' }}>CAMERA</span>
+            <span className="font-mono" style={{ color: '#38bdf8' }}>{ev.camera_id}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--text-muted)' }}>TRACK ID</span>
+            <span className="font-mono" style={{ color: 'var(--accent-cyan)' }}>#{ev.track_id}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--text-muted)' }}>TIMESTAMP</span>
             <span className="font-mono">{ev.created_at}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-muted)' }}>BORDER TRACK</span>
+            <span style={{ color: 'var(--text-muted)' }}>RISK SCORE</span>
+            <span className="font-mono" style={{ color: '#ef4444', fontWeight: 800 }}>{ev.risk_score.toFixed(1)} / 100</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--text-muted)' }}>EVENT CONFIDENCE</span>
             <span className="font-mono" style={{ color: '#10b981', fontWeight: 700 }}>
-              {ev.border_track_id || `BT-${ev.track_id}`}
+              {ev.confidence !== undefined ? `${(ev.confidence * 100).toFixed(0)}%` : '80%'}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-muted)' }}>CAMERA SEQUENCE</span>
-            <span style={{ color: 'var(--accent-cyan)' }}>CAM-01 → CAM-02</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-muted)' }}>DURATION</span>
-            <span className="font-mono">{ev.duration_seconds || 19.2} sec</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-muted)' }}>ENVIRONMENT</span>
-            <span>NIGHT / DEGRADED</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-muted)' }}>ZONE</span>
-            <span style={{ color: '#ef4444', fontWeight: 700 }}>RESTRICTED</span>
+            <span style={{ color: 'var(--text-muted)' }}>STATUS</span>
+            <span className="status-pill pill-cyan" style={{ fontSize: '9px' }}>{ev.status || 'ACTIVE'}</span>
           </div>
         </div>
 

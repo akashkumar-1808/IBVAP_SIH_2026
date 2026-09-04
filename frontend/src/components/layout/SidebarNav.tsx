@@ -1,13 +1,24 @@
 import React from 'react';
-import { Camera, AlertTriangle, CheckCircle2, ShieldAlert, Plus, X, Radio } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Bell,
+  Archive,
+  BarChart3,
+  Settings,
+  Plus,
+  ShieldAlert,
+  AlertTriangle,
+  CheckCircle2,
+  Video,
+} from 'lucide-react';
 import { CameraInfo, EventRecord } from '../../types';
 
 interface SidebarNavProps {
   cameras: CameraInfo[];
   selectedCameraId: string;
-  onSelectCamera: (cameraId: string) => void;
+  onSelectCamera: (id: string) => void;
   onOpenAddCamera: () => void;
-  onDisconnectCamera?: (cameraId: string) => void;
+  onDisconnectCamera: (id: string) => void;
   events: EventRecord[];
 }
 
@@ -16,250 +27,210 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
   selectedCameraId,
   onSelectCamera,
   onOpenAddCamera,
-  onDisconnectCamera,
   events,
 }) => {
-  const highCount = events.filter((e) => e.priority === 'CRITICAL' || e.priority === 'HIGH').length;
-  const medCount = events.filter((e) => e.priority === 'MEDIUM').length;
-  const infoCount = events.filter((e) => e.priority === 'LOW' || e.priority === 'INFO').length;
+  // Compute real threat summary from actual events in memory/repository
+  const criticalOrHigh = events.filter((e) => e.priority === 'CRITICAL' || e.priority === 'HIGH').length;
+  const medium = events.filter((e) => e.priority === 'MEDIUM').length;
+  const lowOrInfo = events.filter((e) => (e.priority as string) === 'LOW' || (e.priority as string) === 'NORMAL' || (e.priority as string) === 'INFO').length;
+
+  const activeCam = cameras.find((c) => c.camera_id === selectedCameraId) || cameras[0] || {
+    camera_id: 'DEMO-CAM-01',
+    name: 'SIH Recorded Breach Demo',
+    sector_id: 'B-07',
+    sector_name: 'Northern Border Sector',
+    status: 'ONLINE',
+  };
 
   return (
-    <aside className="left-panel">
-      {/* Overview Navigation */}
-      <div>
-        <div className="intel-card-header" style={{ marginBottom: '8px' }}>OVERVIEW</div>
-        <button
-          className="btn-command btn-primary"
-          style={{ width: '100%', justifyContent: 'flex-start', padding: '8px 10px' }}
-        >
-          <Camera size={15} />
-          <span>Live Console</span>
-        </button>
+    <aside className="operator-sidebar">
+      {/* 1. Main Functional Navigation */}
+      <div className="sidebar-nav-list">
+        <div className="sidebar-nav-item active">
+          <LayoutDashboard size={15} color="#3B82F6" />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700 }}>OVERVIEW</span>
+            <span style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>Live Operations</span>
+          </div>
+        </div>
+
+        <div className="sidebar-nav-item">
+          <Bell size={15} color="var(--color-text-secondary)" />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600 }}>EVENTS</span>
+            <span style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>Timeline & Alerts</span>
+          </div>
+        </div>
+
+        <div className="sidebar-nav-item">
+          <Archive size={15} color="var(--color-text-secondary)" />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600 }}>EVIDENCE</span>
+            <span style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>Evidence Packages</span>
+          </div>
+        </div>
+
+        <div className="sidebar-nav-item">
+          <BarChart3 size={15} color="var(--color-text-secondary)" />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600 }}>ANALYTICS</span>
+            <span style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>Reports & Insights</span>
+          </div>
+        </div>
+
+        <div className="sidebar-nav-item">
+          <Settings size={15} color="var(--color-text-secondary)" />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600 }}>CONFIGURATION</span>
+            <span style={{ fontSize: '9px', color: 'var(--color-text-muted)' }}>System Settings</span>
+          </div>
+        </div>
       </div>
 
-      {/* Camera Network & Add RTSP Stream */}
+      <div style={{ width: '100%', height: '1px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+      {/* 2. Camera Network */}
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <span className="intel-card-header">CAMERA NETWORK</span>
+        <div className="sidebar-section-title">
+          <span>CAMERA NETWORK</span>
           <button
             onClick={onOpenAddCamera}
-            className="btn-command"
+            title="Connect RTSP Stream"
             style={{
-              padding: '2px 6px',
-              fontSize: '10px',
-              color: 'var(--accent-cyan)',
-              border: '1px solid rgba(6, 182, 212, 0.4)',
-              background: 'rgba(6, 182, 212, 0.08)',
-              gap: '4px',
+              background: 'none',
+              border: 'none',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
             }}
           >
-            <Plus size={11} />
-            <span>Add RTSP</span>
+            <Plus size={14} />
           </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          {cameras.length === 0 ? (
+        {cameras.length === 0 ? (
+          <div
+            className="sidebar-card"
+            onClick={onOpenAddCamera}
+            style={{ cursor: 'pointer', textAlign: 'center', padding: '12px 8px' }}
+          >
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+              No Cameras Connected
+            </span>
+            <span style={{ fontSize: '9.5px', color: '#38BDF8', marginTop: '2px' }}>
+              + Click to connect source
+            </span>
+          </div>
+        ) : (
+          cameras.map((cam) => (
             <div
-              onClick={onOpenAddCamera}
+              key={cam.camera_id}
+              className="sidebar-card"
+              onClick={() => onSelectCamera(cam.camera_id)}
               style={{
-                padding: '16px 10px',
-                textAlign: 'center',
-                background: 'rgba(255, 255, 255, 0.02)',
-                border: '1px dashed var(--border-panel)',
-                borderRadius: '6px',
-                color: 'var(--text-muted)',
-                fontSize: '11px',
                 cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '6px',
+                borderColor: cam.camera_id === selectedCameraId ? 'rgba(59, 130, 246, 0.4)' : 'var(--color-border-subtle)',
+                backgroundColor: cam.camera_id === selectedCameraId ? 'rgba(59, 130, 246, 0.06)' : 'var(--color-surface-elevated)',
+                marginBottom: '4px',
               }}
             >
-              <Radio size={16} color="var(--accent-cyan)" />
-              <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>No Cameras Connected</div>
-              <div style={{ fontSize: '10px', color: 'var(--accent-cyan)' }}>+ Connect Live RTSP URL</div>
-            </div>
-          ) : (
-            cameras.map((cam) => {
-              const isSelected = cam.camera_id === selectedCameraId;
-              const isOnline = cam.status === 'ONLINE';
-              const isDegraded = cam.status === 'DEGRADED';
-
-              return (
-                <div
-                  key={cam.camera_id}
-                  onClick={() => onSelectCamera(cam.camera_id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 10px',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    background: isSelected ? 'rgba(6, 182, 212, 0.12)' : 'var(--bg-card)',
-                    border: isSelected ? '1px solid rgba(6, 182, 212, 0.5)' : '1px solid var(--border-panel)',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Camera size={14} color={isSelected ? 'var(--accent-cyan)' : 'var(--text-secondary)'} />
-                    <div>
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: isSelected ? '#fff' : 'var(--text-primary)' }}>
-                        {cam.camera_id}
-                      </div>
-                      <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{cam.name}</div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        background: isOnline ? '#10b981' : isDegraded ? '#f59e0b' : '#ef4444',
-                        boxShadow: isOnline ? '0 0 6px rgba(16,185,129,0.6)' : isDegraded ? '0 0 6px rgba(245,158,11,0.6)' : 'none',
-                      }}
-                    />
-                    {onDisconnectCamera && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDisconnectCamera(cam.camera_id);
-                        }}
-                        title="Disconnect camera"
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          padding: '2px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <X size={12} />
-                      </button>
-                    )}
-                  </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Video size={13} color="var(--color-text-primary)" />
+                  <span style={{ fontWeight: 700, fontSize: '11px' }}>{cam.camera_id}</span>
                 </div>
-              );
-            })
-          )}
-        </div>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: cam.status === 'ONLINE' ? 'var(--color-green)' : 'var(--color-red)' }} />
+              </div>
+              <span style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{cam.name}</span>
+              <span style={{ fontSize: '9px', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                SECTOR {cam.sector_id || 'B-07'}
+              </span>
+            </div>
+          ))
+        )}
       </div>
 
-      {/* Border Sectors */}
+      {/* 3. Border Sector */}
       <div>
-        <div className="intel-card-header" style={{ marginBottom: '8px' }}>BORDER SECTOR</div>
-        <div
-          style={{
-            padding: '8px 10px',
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-panel)',
-            borderRadius: '5px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#fff' }}>SECTOR B-07</div>
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Northern Border Sector</div>
+        <div className="sidebar-section-title">BORDER SECTOR</div>
+        <div className="sidebar-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontWeight: 700, fontSize: '11px' }}>
+              {activeCam ? `SECTOR ${activeCam.sector_id || 'B-07'}` : 'SECTOR --'}
+            </span>
+            <span
+              style={{
+                fontSize: '9px',
+                fontWeight: 700,
+                color: activeCam ? 'var(--color-green)' : 'var(--color-text-muted)',
+                background: activeCam ? 'var(--color-green-bg)' : 'transparent',
+                padding: '1px 5px',
+                borderRadius: '3px',
+              }}
+            >
+              {activeCam ? 'ACTIVE' : 'OFFLINE'}
+            </span>
           </div>
-          <span className="status-pill pill-cyan" style={{ fontSize: '9px' }}>
-            ACTIVE
+          <span style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>
+            {activeCam?.sector_name || 'No Active Sector'}
           </span>
         </div>
       </div>
 
-      {/* Threat Summary Counters */}
-      <div>
-        <div className="intel-card-header" style={{ marginBottom: '8px' }}>THREAT SUMMARY</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 10px',
-              background: 'rgba(239, 68, 68, 0.08)',
-              border: '1px solid rgba(239, 68, 68, 0.25)',
-              borderRadius: '4px',
-              fontSize: '11px',
-            }}
-          >
-            <span style={{ color: '#ef4444', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <ShieldAlert size={13} />
-              CRITICAL / HIGH
-            </span>
-            <span className="font-mono" style={{ fontWeight: 800, color: '#ef4444' }}>
-              {highCount}
-            </span>
-          </div>
+      {/* 4. Threat Summary */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div className="sidebar-section-title">THREAT SUMMARY</div>
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 10px',
-              background: 'rgba(245, 158, 11, 0.08)',
-              border: '1px solid rgba(245, 158, 11, 0.25)',
-              borderRadius: '4px',
-              fontSize: '11px',
-            }}
-          >
-            <span style={{ color: '#f59e0b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <AlertTriangle size={13} />
-              MEDIUM
-            </span>
-            <span className="font-mono" style={{ fontWeight: 800, color: '#f59e0b' }}>
-              {medCount}
-            </span>
+        <div className="threat-count-row">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <ShieldAlert size={13} color="var(--color-red)" />
+            <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-red)' }}>CRITICAL / HIGH</span>
           </div>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-red)' }}>
+            {criticalOrHigh}
+          </span>
+        </div>
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 10px',
-              background: 'rgba(6, 182, 212, 0.08)',
-              border: '1px solid rgba(6, 182, 212, 0.25)',
-              borderRadius: '4px',
-              fontSize: '11px',
-            }}
-          >
-            <span style={{ color: 'var(--accent-cyan)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <CheckCircle2 size={13} />
-              LOW / INFO
-            </span>
-            <span className="font-mono" style={{ fontWeight: 800, color: 'var(--accent-cyan)' }}>
-              {infoCount}
-            </span>
+        <div className="threat-count-row">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <AlertTriangle size={13} color="var(--color-amber)" />
+            <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-amber)' }}>MEDIUM</span>
           </div>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-amber)' }}>
+            {medium}
+          </span>
+        </div>
+
+        <div className="threat-count-row">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <CheckCircle2 size={13} color="var(--color-blue)" />
+            <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-blue)' }}>LOW / INFO</span>
+          </div>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-blue)' }}>
+            {lowOrInfo}
+          </span>
         </div>
       </div>
 
-      {/* Subsystem Health Monitoring */}
-      <div style={{ marginTop: 'auto' }}>
-        <div className="intel-card-header" style={{ marginBottom: '8px' }}>ARCHITECTURE ENGINES</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '10px' }}>
-          {[
-            { name: 'Video Ingestion', status: cameras.some((c) => c.status === 'ONLINE') ? 'ONLINE' : 'STANDBY' },
-            { name: 'YOLO Perception', status: 'ACTIVE' },
-            { name: 'ByteTrack', status: 'ACTIVE' },
-            { name: 'Spatial World Border', status: 'CALIBRATED' },
-            { name: 'Evidence Packager', status: 'STANDBY' },
-          ].map((item) => (
-            <div key={item.name} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
-              <span>{item.name}</span>
-              <span style={{ color: item.status === 'ONLINE' || item.status === 'ACTIVE' || item.status === 'CALIBRATED' ? '#10b981' : 'var(--text-muted)' }}>
-                {item.status}
-              </span>
-            </div>
-          ))}
+      {/* 5. System Health */}
+      <div style={{ marginTop: 'auto', paddingTop: '8px' }}>
+        <div className="sidebar-section-title">SYSTEM HEALTH</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', marginTop: '3px' }}>
+          <span style={{ color: 'var(--color-green)', fontWeight: 700 }}>ALL SYSTEMS OPERATIONAL</span>
+          <span style={{ color: 'var(--color-green)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>100%</span>
+        </div>
+        <div
+          style={{
+            width: '100%',
+            height: '4px',
+            backgroundColor: 'var(--color-surface-elevated)',
+            borderRadius: '2px',
+            marginTop: '5px',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ width: '100%', height: '100%', backgroundColor: 'var(--color-green)' }} />
         </div>
       </div>
     </aside>

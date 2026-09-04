@@ -3,12 +3,11 @@ import { TopSystemBar } from './components/layout/TopSystemBar';
 import { SidebarNav } from './components/layout/SidebarNav';
 import { BottomStatusBar } from './components/layout/BottomStatusBar';
 import { PrimaryVideoPanel } from './components/console/PrimaryVideoPanel';
+import { ActiveSecurityEventBanner } from './components/console/ActiveSecurityEventBanner';
 import { IntelligenceCards } from './components/console/IntelligenceCards';
 import { EventTimeline } from './components/console/EventTimeline';
-import { EventDetailsPanel } from './components/console/EventDetailsPanel';
+import { WhyThisEvent } from './components/console/WhyThisEvent';
 import { EvidencePackagePreview } from './components/console/EvidencePackagePreview';
-import { ActiveEventQueue } from './components/console/ActiveEventQueue';
-import { ActiveSecurityEventBanner } from './components/console/ActiveSecurityEventBanner';
 import { AddCameraModal } from './components/console/AddCameraModal';
 
 import {
@@ -33,13 +32,13 @@ import { TelemetryWebSocket } from './services/websocket';
 export const App: React.FC = () => {
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-  const [calibration, setCalibration] = useState<CameraCalibration | null>(null);
+  const [, setCalibration] = useState<CameraCalibration | null>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null);
   const [evidencePackage, setEvidencePackage] = useState<EvidencePackage | null>(null);
   const [isAddCameraModalOpen, setIsAddCameraModalOpen] = useState<boolean>(false);
 
-  // Deduplication ref for high priority alert selection
+  // Deduplication ref for active event selection
   const lastAlertedEventIdRef = useRef<string | null>(null);
 
   // Real-time live telemetry state from WebSocket
@@ -56,7 +55,7 @@ export const App: React.FC = () => {
 
   const [wsStatus, setWsStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING'>('RECONNECTING');
 
-  // 1. Initial Load: Cameras, Events
+  // 1. Initial Load: Cameras & Events
   useEffect(() => {
     fetchCameras()
       .then((cams) => {
@@ -103,7 +102,7 @@ export const App: React.FC = () => {
         return updated;
       });
 
-      // Deduplicated auto-selection of newest high/critical event
+      // Deduplicated selection for new high/critical event
       const highEv = packet.active_events.find(
         (e) => e.priority === 'CRITICAL' || e.priority === 'HIGH'
       );
@@ -186,9 +185,8 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-container">
-      {/* Top System Bar */}
+      {/* 1. Top Continuous Command System Bar */}
       <TopSystemBar
-        currentSector="SECTOR B-07"
         isLiveMode={wsStatus === 'CONNECTED'}
         camera={selectedCam}
         cameraTelemetry={telemetry.camera}
@@ -197,9 +195,9 @@ export const App: React.FC = () => {
         systemHealth={wsStatus === 'CONNECTED' ? 'HEALTHY' : 'RECONNECTING'}
       />
 
-      {/* Main Command Console 3-Column Grid */}
-      <main className="console-grid">
-        {/* Column 1: Left Navigation & Camera Network */}
+      {/* 2. Main Dashboard Layout (Left Nav + Central Deck) */}
+      <main className="dashboard-layout">
+        {/* Left Sidebar Navigation & Context */}
         <SidebarNav
           cameras={cameras}
           selectedCameraId={selectedCameraId}
@@ -209,75 +207,68 @@ export const App: React.FC = () => {
           events={events}
         />
 
-        {/* Column 2: Center Primary Video & Forensic Deck */}
-        <section className="center-deck">
-          {/* Prominent Real Active Security Event Alert (Driven by real EventRecord) */}
-          {activeAlertEvent && (
-            <ActiveSecurityEventBanner
-              event={activeAlertEvent}
-              onSelectEvent={handleSelectEvent}
-              onAcknowledge={handleAcknowledge}
+        {/* Central Operations Area */}
+        <section className="main-console-deck">
+          {/* Upper Deck: Live Video Feed (Left) + Active Security Event & 6-Card Intelligence Grid (Right) */}
+          <div className="upper-command-deck">
+            {/* Live Video Panel */}
+            <PrimaryVideoPanel
+              cameraId={selectedCameraId}
+              cameraName={selectedCam?.name || 'No Active Camera'}
+              fps={telemetry.fps}
+              environment={telemetry.environment}
+              tracks={telemetry.tracks}
+              spatialStates={telemetry.spatial_states}
+              behaviors={telemetry.behavior_primitives}
+              activeEvents={telemetry.active_events}
+              cameraTelemetry={telemetry.camera}
+              onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
             />
-          )}
 
-          {/* Primary Live Video Player with OpenCV HUD stream */}
-          <PrimaryVideoPanel
-            cameraId={selectedCameraId}
-            cameraName={selectedCam?.name || 'No Active Camera'}
-            fps={telemetry.fps}
-            environment={telemetry.environment}
-            calibration={calibration}
-            tracks={telemetry.tracks}
-            spatialStates={telemetry.spatial_states}
-            behaviors={telemetry.behavior_primitives}
-            activeEvents={telemetry.active_events}
-            cameraTelemetry={telemetry.camera}
-            onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
-          />
+            {/* Right Deck: Active Alert Banner + 6 Intelligence Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <ActiveSecurityEventBanner
+                event={activeAlertEvent}
+                onSelectEvent={handleSelectEvent}
+                onAcknowledge={handleAcknowledge}
+              />
 
-          {/* Bottom Forensic Row: Chronological Timeline | Details & "Why This Event?" | Evidence Package */}
-          <div className="bottom-forensic-row">
+              <IntelligenceCards
+                environment={telemetry.environment}
+                tracks={telemetry.tracks}
+                selectedTrack={telemetry.tracks.length > 0 ? telemetry.tracks[0] : null}
+                spatialStates={telemetry.spatial_states}
+                behaviors={telemetry.behavior_primitives}
+                activeEvent={telemetry.active_events[0] || selectedEvent}
+              />
+            </div>
+          </div>
+
+          {/* Lower Operations Area: Event Timeline (Left) + Why This Event (Center) + Evidence Package (Right) */}
+          <div className="lower-operations-deck">
             <EventTimeline
               events={events}
               selectedEvent={selectedEvent}
               onSelectEvent={handleSelectEvent}
             />
-            <EventDetailsPanel
+
+            <WhyThisEvent
               event={selectedEvent}
               onAcknowledge={handleAcknowledge}
             />
+
             <EvidencePackagePreview
               evidencePackage={evidencePackage}
               event={selectedEvent}
             />
           </div>
         </section>
-
-        {/* Column 3: Right Panel: Active Event Queue & 6 Intelligence Pillars */}
-        <section className="right-panel" style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto' }}>
-          {/* Active Security Incident Queue */}
-          <ActiveEventQueue
-            events={events}
-            selectedEventId={selectedEvent?.id}
-            onSelectEvent={handleSelectEvent}
-          />
-
-          {/* 6 Authoritative Intelligence Pillars from Telemetry */}
-          <IntelligenceCards
-            environment={telemetry.environment}
-            tracks={telemetry.tracks}
-            selectedTrack={telemetry.tracks.length > 0 ? telemetry.tracks[0] : null}
-            spatialStates={telemetry.spatial_states}
-            behaviors={telemetry.behavior_primitives}
-            activeEvent={telemetry.active_events[0] || selectedEvent}
-          />
-        </section>
       </main>
 
-      {/* Bottom Footer Status Strip */}
+      {/* 3. Bottom Operational Status Bar */}
       <BottomStatusBar />
 
-      {/* Connect RTSP Camera Modal */}
+      {/* Connect Camera Modal */}
       <AddCameraModal
         isOpen={isAddCameraModalOpen}
         onClose={() => setIsAddCameraModalOpen(false)}

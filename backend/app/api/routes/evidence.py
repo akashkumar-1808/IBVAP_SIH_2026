@@ -7,6 +7,7 @@ Architecture Decision: DEC-0008
 import os
 import hashlib
 import logging
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
@@ -33,10 +34,31 @@ def get_evidence_record(evidence_id: str):
     return rec
 
 
+def _resolve_evidence_path(storage_ref: str, rec: Optional[Dict[str, Any]] = None) -> Optional[Path]:
+    """Resolves cross-platform local evidence file path safely."""
+    if not storage_ref:
+        return None
+    p = Path(os.path.normpath(storage_ref))
+    if p.exists():
+        return p
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    p_repo = repo_root / os.path.normpath(storage_ref)
+    if p_repo.exists():
+        return p_repo
+    if rec:
+        cam_id = rec.get("camera_id", "")
+        evt_id = rec.get("event_id", "")
+        file_name = os.path.basename(storage_ref)
+        p_alt = settings.evidence_path / cam_id / evt_id / file_name
+        if p_alt.exists():
+            return p_alt
+    return None
+
+
 @router.get("/{evidence_id}/verify", response_model=IntegrityVerificationResponse)
-def verify_evidence_integrity(evidence_id: str):
+def verify_evidence_hash(evidence_id: str):
     """
-    On-demand cryptographic SHA-256 integrity verification.
+    Performs forensic verification of an evidence item using SHA-256 cryptographic digest.
     Recalculates file hash and compares against the immutable database/manifest fingerprint.
     """
     rec = evidence_repo.get_by_id(evidence_id)
@@ -46,8 +68,9 @@ def verify_evidence_integrity(evidence_id: str):
     storage_ref = rec.get("storage_reference", "")
     stored_sha256 = rec.get("sha256", "")
     file_name = os.path.basename(storage_ref)
+    resolved_path = _resolve_evidence_path(storage_ref, rec)
 
-    if not os.path.exists(storage_ref):
+    if not resolved_path or not resolved_path.exists():
         return IntegrityVerificationResponse(
             evidence_id=evidence_id,
             file_name=file_name,
@@ -60,7 +83,7 @@ def verify_evidence_integrity(evidence_id: str):
 
     # Compute SHA-256
     sha256 = hashlib.sha256()
-    with open(storage_ref, "rb") as f:
+    with open(resolved_path, "rb") as f:
         while chunk := f.read(65536):
             sha256.update(chunk)
     calculated_sha256 = sha256.hexdigest()
@@ -122,10 +145,11 @@ def get_evidence_file(evidence_id: str):
         raise HTTPException(status_code=404, detail=f"Evidence record '{evidence_id}' not found.")
 
     storage_ref = rec.get("storage_reference", "")
-    if not os.path.exists(storage_ref):
+    resolved_path = _resolve_evidence_path(storage_ref, rec)
+    if not resolved_path or not resolved_path.exists():
         raise HTTPException(status_code=404, detail=f"Evidence file not found on disk at '{storage_ref}'.")
 
-    ext = os.path.splitext(storage_ref)[1].lower()
+    ext = resolved_path.suffix.lower()
     media_types = {
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
@@ -135,4 +159,4 @@ def get_evidence_file(evidence_id: str):
     }
     media_type = media_types.get(ext, "application/octet-stream")
 
-    return FileResponse(path=storage_ref, media_type=media_type, filename=os.path.basename(storage_ref))
+    return FileResponse(path=str(resolved_path), media_type=media_type, filename=resolved_path.name)

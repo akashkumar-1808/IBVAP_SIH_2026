@@ -25,14 +25,29 @@ async def lifespan(app: FastAPI):
         pass
 
     logger.info(f"Starting {settings.APP_NAME} in '{settings.ENVIRONMENT}' mode...")
+    settings.ensure_storage_directories()
+
     if settings.is_supabase_configured:
         db_status, msg = await check_database_health()
         logger.info(f"Initial Supabase DB check: status={db_status} msg={msg or 'ok'}")
     else:
         logger.warning("Supabase credentials not set in environment. Running in unconfigured local mode.")
+
+    # Start single demo pipeline if configured (guarantees exactly 1 pipeline)
+    from .api.routes.cameras import start_demo_pipeline_if_configured, stop_all_pipelines
+    try:
+        start_demo_pipeline_if_configured()
+    except Exception as exc:
+        logger.error(f"Error during demo pipeline auto-start: {exc}")
+
     yield
+
     # Shutdown lifecycle
     logger.info(f"Shutting down {settings.APP_NAME}...")
+    try:
+        stop_all_pipelines()
+    except Exception as exc:
+        logger.debug(f"Error stopping camera pipelines: {exc}")
 
 
 def create_app() -> FastAPI:

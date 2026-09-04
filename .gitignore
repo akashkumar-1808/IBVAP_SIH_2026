@@ -10,6 +10,8 @@ venv/
 build/
 develop-eggs/
 dist/
+!frontend/dist/
+!frontend/dist/**
 downloads/
 eggs/
 .eggs/
@@ -34,20 +36,24 @@ storage/evidence/*
 !storage/evidence/.gitkeep
 storage/samples/*
 !storage/samples/README.md
+!storage/samples/test_video.mp4
 storage/output/*
 !storage/output/.gitkeep
 results/
 *.mp4
+!storage/samples/test_video.mp4
 *.avi
 *.mov
 *.mkv
 
 # Model weights
 models/**/*.pt
+!models/detector/yolov8n.pt
 models/**/*.onnx
 models/**/*.engine
 models/**/*.bin
 *.pt
+!yolov8n.pt
 *.onnx
 
 # Environment & credentials
@@ -62,7 +68,6 @@ backend/.env.*
 
 # Node / Frontend
 frontend/node_modules/
-frontend/dist/
 frontend/.vite/
 
 # IDE

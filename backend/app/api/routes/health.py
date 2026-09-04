@@ -19,15 +19,19 @@ class HealthResponse(BaseModel):
 
 
 @router.get("/health", response_model=HealthResponse)
-async def get_health(response: Response):
+async def get_health(response: Response, check_db: bool = True):
     """
     Evaluates backend and database health status.
     Verifies reachability to Supabase PostgreSQL without exposing sensitive tokens.
+    For lightweight hosting/cloud probes (e.g., Render), pass ?check_db=false to bypass network DB checks.
     """
-    db_status, db_message = await check_database_health()
+    if check_db:
+        db_status, db_message = await check_database_health()
+    else:
+        db_status, db_message = "skipped", "Database check skipped for lightweight probe"
 
-    is_healthy = db_status in ("healthy", "not_configured")
-    overall_status = "ok" if db_status == "healthy" else "degraded" if db_status in ("degraded", "not_configured") else "unhealthy"
+    is_healthy = db_status in ("healthy", "not_configured", "skipped")
+    overall_status = "ok" if is_healthy else "degraded" if db_status in ("degraded",) else "unhealthy"
 
     if overall_status == "unhealthy":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE

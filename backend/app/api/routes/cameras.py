@@ -487,3 +487,60 @@ def get_camera_calibration(camera_id: str):
         "reprojection_error_px": 0.42,
         "last_calibrated_utc": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def start_demo_pipeline_if_configured():
+    """
+    Called on FastAPI startup (lifespan) to start the single demo pipeline if configured.
+    Guarantees exactly ONE pipeline runs without duplicates.
+    """
+    from ...config import settings
+    from pathlib import Path
+
+    if not getattr(settings, "AUTO_START_DEMO_PIPELINE", False):
+        return
+
+    cam_id = getattr(settings, "DEFAULT_CAMERA_ID", "DEMO-CAM-01")
+    if cam_id in _RUNNING_ORCHESTRATORS:
+        logger.info(f"Demo camera '{cam_id}' pipeline is already running.")
+        return
+
+    video_path_str = getattr(settings, "DEMO_VIDEO_PATH", "storage/samples/test_video.mp4")
+    video_path = Path(video_path_str)
+    if not video_path.is_absolute():
+        repo_root = Path(__file__).resolve().parent.parent.parent.parent
+        video_path = repo_root / video_path_str
+
+    if not video_path.exists():
+        logger.warning(
+            f"Demo video file '{video_path_str}' not found on disk at '{video_path}'. "
+            "Skipping automatic pipeline startup. Connect manually via UI or POST /api/v1/cameras/connect."
+        )
+        return
+
+    logger.info(f"Auto-starting production demo pipeline for camera '{cam_id}' with video '{video_path}'...")
+    req = ConnectCameraRequest(
+        camera_id=cam_id,
+        name="SIH Recorded Breach Demo",
+        video_file_path=str(video_path),
+        sector_id="SECTOR-B07",
+        sector_name="Northern Border Sector",
+        device=getattr(settings, "DEFAULT_DEVICE", "cpu"),
+    )
+    try:
+        connect_rtsp_camera(req)
+        logger.info(f"Production demo pipeline for camera '{cam_id}' started successfully.")
+    except Exception as exc:
+        logger.error(f"Failed to auto-start demo camera pipeline: {exc}")
+
+
+def stop_all_pipelines():
+    """Stops all active camera orchestrators and worker threads on server shutdown."""
+    for cam_id, orch in list(_RUNNING_ORCHESTRATORS.items()):
+        try:
+            logger.info(f"Stopping orchestrator for camera '{cam_id}'...")
+            orch.stop()
+        except Exception as exc:
+            logger.debug(f"Error stopping camera '{cam_id}': {exc}")
+    _RUNNING_ORCHESTRATORS.clear()
+    _RUNNING_THREADS.clear()

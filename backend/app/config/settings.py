@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     HOST: str = Field(default="0.0.0.0", description="Backend host binding")
     PORT: int = Field(default=8000, description="Backend port binding")
 
+    # Deployment, Camera & Storage settings
+    STORAGE_ROOT: str = Field(default="storage", description="Root path for runtime evidence and output storage")
+    DEMO_VIDEO_PATH: str = Field(default="storage/samples/test_video.mp4", description="Path to production demo MP4 video")
+    DEFAULT_CAMERA_ID: str = Field(default="DEMO-CAM-01", description="Default camera ID for single-camera deployment")
+    DEFAULT_DEVICE: str = Field(default="cpu", description="Compute device: cpu or cuda")
+    YOLO_MODEL_PATH: str = Field(default="models/detector/yolov8n.pt", description="Path to YOLO weights file")
+    AUTO_START_DEMO_PIPELINE: bool = Field(default=False, description="Auto-start live demo pipeline on server startup")
+
     # Supabase credentials & endpoints (Sensitive)
     SUPABASE_URL: Optional[str] = Field(default=None, description="Supabase project URL endpoint")
     SUPABASE_ANON_KEY: Optional[SecretStr] = Field(default=None, description="Supabase public anon key")
@@ -58,6 +66,29 @@ class Settings(BaseSettings):
             if val and not val.startswith("your-"):
                 return val
         return None
+
+    @property
+    def storage_path(self):
+        from pathlib import Path
+        return Path(self.STORAGE_ROOT).resolve()
+
+    @property
+    def evidence_path(self):
+        return self.storage_path / "evidence"
+
+    @property
+    def samples_path(self):
+        return self.storage_path / "samples"
+
+    @property
+    def runs_path(self):
+        return self.storage_path / "runs"
+
+    def ensure_storage_directories(self) -> None:
+        """Ensures that all runtime storage directories exist on disk."""
+        self.evidence_path.mkdir(parents=True, exist_ok=True)
+        self.samples_path.mkdir(parents=True, exist_ok=True)
+        self.runs_path.mkdir(parents=True, exist_ok=True)
 
 
 # Global settings singleton

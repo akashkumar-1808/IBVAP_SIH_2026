@@ -1,11 +1,11 @@
 import React from 'react';
-import { AlertOctagon, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, Check, ArrowRight, ShieldCheck } from 'lucide-react';
 import { EventRecord } from '../../types';
 
 interface ActiveSecurityEventBannerProps {
   event?: EventRecord | null;
-  onSelectEvent?: (event: EventRecord) => void;
-  onAcknowledge?: (eventId: string) => void;
+  onSelectEvent: (event: EventRecord) => void;
+  onAcknowledge: (eventId: string) => void;
 }
 
 export const ActiveSecurityEventBanner: React.FC<ActiveSecurityEventBannerProps> = ({
@@ -13,126 +13,119 @@ export const ActiveSecurityEventBanner: React.FC<ActiveSecurityEventBannerProps>
   onSelectEvent,
   onAcknowledge,
 }) => {
-  if (!event) return null;
+  if (!event) {
+    return (
+      <div
+        className="active-security-banner"
+        style={{
+          borderColor: 'var(--color-border)',
+          backgroundColor: 'var(--color-surface-dark)',
+        }}
+      >
+        <div className="alert-left-block">
+          <div
+            className="alert-icon-square"
+            style={{
+              backgroundColor: 'var(--color-green-bg)',
+              borderColor: 'rgba(16, 185, 129, 0.3)',
+              color: 'var(--color-green)',
+            }}
+          >
+            <ShieldCheck size={20} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--color-green)', textTransform: 'uppercase' }}>
+              BORDER SECTOR SECURE
+            </span>
+            <span className="alert-title-main" style={{ fontSize: '13px' }}>
+              No Active Security Intrusions Detected
+            </span>
+            <span className="alert-desc-meta">
+              Autonomous spatial monitoring active · All perimeter zones clear
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const isHighOrCritical = event.priority === 'HIGH' || event.priority === 'CRITICAL';
-  const score = event.risk_score;
-  const confidencePct = event.confidence ? `${(event.confidence * 100).toFixed(0)}%` : '80%';
+  const isMedium = event.priority === 'MEDIUM';
+
+  const riskScore = typeof event.risk_score === 'number' ? event.risk_score.toFixed(1) : '0.0';
+  const eventConfidence = event.evidence_confidence
+    ? Math.round(event.evidence_confidence * 100)
+    : (event.detection_confidence ? Math.round(event.detection_confidence * 100) : 0);
+
+  const eventTitle = `${event.event_type.replace(/_/g, ' ')} — TRACK #${event.track_id}`;
+  const occupancyZone = event.reason_codes && event.reason_codes.some(rc => rc.toLowerCase().includes('restricted'))
+    ? 'RESTRICTED ZONE'
+    : (event.reason_codes && event.reason_codes.some(rc => rc.toLowerCase().includes('buffer')) ? 'WARNING BUFFER' : 'PERIMETER');
 
   return (
-    <div
-      style={{
-        background: isHighOrCritical ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.10)',
-        border: `2px solid ${isHighOrCritical ? '#ef4444' : '#f59e0b'}`,
-        borderRadius: '6px',
-        padding: '12px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '16px',
-        boxShadow: isHighOrCritical ? '0 0 25px rgba(239, 68, 68, 0.25)' : 'none',
-        animation: isHighOrCritical ? 'pulse 2s infinite' : 'none',
-      }}
-    >
-      {/* Alert Icon & Identification */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div
-          style={{
-            width: '38px',
-            height: '38px',
-            borderRadius: '6px',
-            background: isHighOrCritical ? '#ef4444' : '#f59e0b',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            flexShrink: 0,
-          }}
-        >
-          <AlertOctagon size={22} />
+    <div className={`active-security-banner ${isMedium ? 'medium' : ''}`}>
+      {/* Left: Icon & Incident Identification */}
+      <div className="alert-left-block">
+        <div className={`alert-icon-square ${isMedium ? 'medium' : ''}`}>
+          <AlertTriangle size={22} />
         </div>
 
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span className="alert-title-sub">
+            {event.priority} PRIORITY SECURITY EVENT
+          </span>
+          <span className="alert-title-main">
+            {eventTitle}
+          </span>
+          <span className="alert-desc-meta">
+            CAMERA: {event.camera_id} · OCCUPANCY: {occupancyZone}
+          </span>
+        </div>
+      </div>
+
+      {/* Right: Risk Score, Confidence & Actions */}
+      <div className="alert-right-block">
+        <div className="alert-score-gauge">
+          <div className="alert-score-label">RISK SCORE</div>
+          <div className="alert-score-large" style={{ color: isMedium ? 'var(--color-amber)' : 'var(--color-red)' }}>
+            {riskScore} <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>/ 100</span>
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+            <span>CONFIDENCE <strong>{eventConfidence}%</strong></span>
             <span
               style={{
-                fontSize: '11px',
-                fontWeight: 900,
-                color: isHighOrCritical ? '#ef4444' : '#f59e0b',
-                letterSpacing: '0.08em',
+                fontSize: '8px',
+                fontWeight: 800,
+                color: isMedium ? 'var(--color-amber)' : 'var(--color-red)',
+                backgroundColor: isMedium ? 'var(--color-amber-bg)' : 'var(--color-red-bg)',
+                padding: '1px 4px',
+                borderRadius: '2px',
               }}
             >
-              🚨 {event.priority} PRIORITY SECURITY EVENT
-            </span>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>•</span>
-            <span className="font-mono" style={{ fontSize: '11px', color: '#f8fafc' }}>
-              ID: {event.id}
+              {event.priority}
             </span>
           </div>
-
-          <div style={{ fontSize: '15px', fontWeight: 800, color: '#ffffff', marginTop: '2px' }}>
-            {event.event_type.replace(/_/g, ' ')} — TRACK #{event.track_id}
-          </div>
-
-          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-            CAMERA: <strong style={{ color: '#fff' }}>{event.camera_id}</strong> | OCCUPANCY: <strong style={{ color: '#ef4444' }}>RESTRICTED ZONE</strong>
-          </div>
-        </div>
-      </div>
-
-      {/* Center Intelligence Metrics */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontFamily: 'var(--font-mono)' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>RISK SCORE</div>
-          <div style={{ fontSize: '18px', fontWeight: 900, color: isHighOrCritical ? '#ef4444' : '#f59e0b' }}>
-            {score.toFixed(1)} <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>/ 100</span>
-          </div>
         </div>
 
-        <div style={{ width: '1px', height: '28px', background: 'var(--border-panel)' }} />
-
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>CONFIDENCE</div>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#10b981' }}>
-            {confidencePct}
-          </div>
-        </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {onAcknowledge && (
+        <div className="alert-actions-cluster">
           <button
+            className="btn-neutral-outline"
             onClick={() => onAcknowledge(event.id)}
-            className="btn-command"
-            style={{
-              padding: '6px 12px',
-              fontSize: '11px',
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.2)',
-            }}
+            title="Mark event acknowledged by operator"
           >
-            <CheckCircle2 size={13} />
-            <span>Acknowledge</span>
+            <Check size={12} />
+            Acknowledge Event
           </button>
-        )}
 
-        {onSelectEvent && (
           <button
+            className="btn-alert-solid"
+            style={{ backgroundColor: isMedium ? 'var(--color-amber)' : 'var(--color-red)', borderColor: isMedium ? 'var(--color-amber)' : 'var(--color-red)' }}
             onClick={() => onSelectEvent(event)}
-            className="btn-command btn-primary"
-            style={{
-              padding: '6px 14px',
-              fontSize: '11px',
-              fontWeight: 700,
-              background: '#ef4444',
-              borderColor: '#ef4444',
-            }}
+            title="Inspect forensic evidence package"
           >
-            <span>Inspect Evidence</span>
-            <ArrowRight size={13} />
+            Inspect Evidence
+            <ArrowRight size={12} />
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

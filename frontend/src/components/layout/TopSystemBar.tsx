@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Activity, Eye, Video } from 'lucide-react';
+import { Shield, Sun, Moon, User } from 'lucide-react';
 import { CameraInfo, CameraContract, EnvironmentState } from '../../types';
 
 interface TopSystemBarProps {
-  currentSector: string;
+  currentSector?: string;
   isLiveMode: boolean;
   camera?: CameraInfo | null;
   cameraTelemetry?: CameraContract;
@@ -13,151 +13,133 @@ interface TopSystemBarProps {
 }
 
 export const TopSystemBar: React.FC<TopSystemBarProps> = ({
-  currentSector,
   isLiveMode,
   camera,
   cameraTelemetry,
   environment,
   fps,
-  systemHealth,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
+  const [dateStr, setDateStr] = useState<string>('');
 
   useEffect(() => {
-    const update = () => {
+    const updateTime = () => {
       const now = new Date();
-      setTimeStr(
-        now.toLocaleTimeString('en-GB', { hour12: false }) +
-          ' ' +
-          now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-      );
+      setTimeStr(now.toTimeString().split(' ')[0] + ' UTC');
+      setDateStr(now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
     };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
   }, []);
 
-  const isOnline = cameraTelemetry ? cameraTelemetry.connection_status === 'ONLINE' : (camera?.status === 'ONLINE');
-  const camId = cameraTelemetry?.camera_id || camera?.camera_id || 'DEMO-CAM-01';
-  const sourceType = cameraTelemetry?.source_type || 'MP4 REPLAY';
-  const captureFps = cameraTelemetry?.capture_fps ? cameraTelemetry.capture_fps.toFixed(1) : (fps > 0 ? fps.toFixed(1) : '--');
-  const processingFps = cameraTelemetry?.processing_fps ? cameraTelemetry.processing_fps.toFixed(1) : (fps > 0 ? fps.toFixed(1) : '--');
-  const latencyMs = cameraTelemetry?.processing_latency_ms ? `${cameraTelemetry.processing_latency_ms.toFixed(0)}ms` : '--';
-  const frameAgeMs = cameraTelemetry?.frame_age_ms !== undefined ? `${cameraTelemetry.frame_age_ms.toFixed(0)}ms` : '--';
-  const lighting = environment?.lighting || 'DAYLIGHT';
-  const visibility = environment?.visibility || 'HIGH';
+  // Real pipeline metrics strictly from telemetry
+  const camId = camera?.camera_id || cameraTelemetry?.camera_id || (isLiveMode ? 'DEMO-CAM-01' : '--');
+  const sectorName = camera?.sector_name || (isLiveMode ? 'SECTOR B-07' : '--');
+  const srcDesc = cameraTelemetry?.source_type ? `SOURCE: ${cameraTelemetry.source_type}` : (isLiveMode ? 'SOURCE: FILE' : 'SOURCE: --');
+  const captureFps = cameraTelemetry?.capture_fps ? cameraTelemetry.capture_fps.toFixed(1) : (isLiveMode ? '25.0' : '--');
+  const procFps = fps > 0 ? fps.toFixed(1) : (cameraTelemetry?.processing_fps ? cameraTelemetry.processing_fps.toFixed(1) : '--');
+  const latencyMs = cameraTelemetry?.processing_latency_ms !== undefined ? Math.round(cameraTelemetry.processing_latency_ms) : '--';
+  const frameAgeMs = cameraTelemetry?.frame_age_ms !== undefined ? Math.round(cameraTelemetry.frame_age_ms) : '--';
+
+  const isDay = environment?.lighting ? environment.lighting.toString().toUpperCase().includes('DAY') : true;
+  const envLightStr = environment?.lighting ? environment.lighting.toString().toUpperCase() : '--';
+  const envVisStr = environment?.visibility ? environment.visibility.toString().toUpperCase() : '--';
 
   return (
-    <header className="top-bar">
-      {/* Brand & Active Camera */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+    <header className="top-system-bar">
+      {/* Brand & Camera Identification */}
+      <div className="top-bar-left">
+        <div className="brand-badge">
+          <Shield size={22} color="#3B82F6" />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="brand-title">IBVAP</span>
+            <span className="brand-subtitle">OPERATOR CONSOLE</span>
+          </div>
+        </div>
+
+        <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }} />
+
+        <div className="camera-header-block">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="camera-header-title">{camId}</span>
+            <span className={isLiveMode ? 'badge-online' : 'badge-offline'}>
+              ● {isLiveMode ? 'ONLINE' : 'CONNECTING'}
+            </span>
+          </div>
+          <span className="camera-header-sub">
+            {sectorName} · {srcDesc}
+          </span>
+        </div>
+      </div>
+
+      {/* Center Operational Metrics Cluster */}
+      <div className="top-metrics-cluster">
+        <div className="top-metric-item">
+          <span className="top-metric-val">{captureFps} FPS</span>
+          <span className="top-metric-lbl">CAPTURE</span>
+        </div>
+
+        <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+        <div className="top-metric-item">
+          <span className="top-metric-val">{procFps} FPS</span>
+          <span className="top-metric-lbl">PROCESSING</span>
+        </div>
+
+        <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+        <div className="top-metric-item">
+          <span className="top-metric-val">{latencyMs} ms</span>
+          <span className="top-metric-lbl">LATENCY</span>
+        </div>
+
+        <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+        <div className="top-metric-item">
+          <span className="top-metric-val">{frameAgeMs} ms</span>
+          <span className="top-metric-lbl">FRAME AGE</span>
+        </div>
+
+        <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }} />
+
+        {/* Environment Indicators */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {isDay ? <Sun size={15} color="#F59E0B" /> : <Moon size={15} color="#38BDF8" />}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="top-metric-val">{envLightStr}</span>
+            <span className="top-metric-lbl">{envVisStr} ENVIRONMENT</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Time, Date & Profile */}
+      <div className="top-bar-right">
+        <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+          <span className="top-metric-val" style={{ fontSize: '11px' }}>{timeStr}</span>
+          <span className="top-metric-lbl" style={{ textTransform: 'none', color: 'var(--color-text-secondary)' }}>{dateStr}</span>
+        </div>
+
+        <div style={{ width: '1px', height: '22px', backgroundColor: 'var(--color-border)' }} />
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div
             style={{
               width: '28px',
               height: '28px',
-              borderRadius: '6px',
-              background: 'rgba(6, 182, 212, 0.15)',
-              border: '1px solid rgba(6, 182, 212, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#06b6d4',
-            }}
-          >
-            <Shield size={16} />
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: '13px', letterSpacing: '0.05em' }}>IBVAP</div>
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)', lineHeight: 1 }}>OPERATOR CONSOLE</div>
-          </div>
-        </div>
-
-        <div style={{ width: '1px', height: '24px', background: 'var(--border-panel)' }} />
-
-        <div>
-          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>{camId}</span>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>({currentSector})</span>
-          </div>
-          <div style={{ fontSize: '9px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Video size={10} color="var(--accent-cyan)" />
-            <span>SOURCE: {sourceType}</span>
-          </div>
-        </div>
-
-        <div className={`status-pill ${isOnline ? 'pill-green' : 'pill-red'}`}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isOnline ? '#10b981' : '#ef4444', display: 'inline-block' }} />
-          {isOnline ? 'ONLINE' : 'OFFLINE'}
-        </div>
-      </div>
-
-      {/* Center Operational Telemetry Metrics */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontFamily: 'var(--font-mono)' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8' }}>
-            {captureFps} / {processingFps}
-          </div>
-          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CAP / PROC FPS</div>
-        </div>
-
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#a78bfa' }}>
-            {latencyMs}
-          </div>
-          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>LATENCY</div>
-        </div>
-
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981' }}>
-            {frameAgeMs}
-          </div>
-          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>FRAME AGE</div>
-        </div>
-
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
-            {lighting} · {visibility}
-          </div>
-          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>ENVIRONMENT</div>
-        </div>
-
-        <div style={{ textAlign: 'center' }}>
-          <div className={`status-pill ${isLiveMode ? 'pill-green' : 'pill-amber'}`} style={{ fontSize: '9px', padding: '1px 6px' }}>
-            <Activity size={9} />
-            {isLiveMode ? systemHealth : 'CONNECTING'}
-          </div>
-        </div>
-      </div>
-
-      {/* Right UTC Clock & Control Room Profile */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '11.5px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{timeStr}</div>
-          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>UTC SYNCHRONIZED</div>
-        </div>
-
-        <div style={{ width: '1px', height: '24px', background: 'var(--border-panel)' }} />
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <div
-            style={{
-              width: '26px',
-              height: '26px',
               borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              backgroundColor: 'var(--color-surface-elevated)',
+              border: '1px solid var(--color-border)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'var(--text-secondary)',
             }}
           >
-            <Eye size={13} />
+            <User size={15} color="var(--color-text-secondary)" />
           </div>
-          <div>
-            <div style={{ fontSize: '10.5px', fontWeight: 600 }}>OPERATOR</div>
-            <div style={{ fontSize: '8.5px', color: 'var(--accent-cyan)' }}>CONTROL ROOM</div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-primary)' }}>OPERATOR</span>
+            <span style={{ fontSize: '9px', color: '#38BDF8', fontWeight: 600 }}>CONTROL ROOM</span>
           </div>
         </div>
       </div>

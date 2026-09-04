@@ -23,6 +23,12 @@ class ConnectionManager:
         self._latest_telemetry: Dict[str, Any] = {}
 
     async def connect(self, websocket: WebSocket):
+        global _MAIN_LOOP
+        if _MAIN_LOOP is None:
+            try:
+                _MAIN_LOOP = asyncio.get_running_loop()
+            except Exception:
+                pass
         await websocket.accept()
         self.active_connections.add(websocket)
         logger.info(f"Operator console connected. Total active sessions: {len(self.active_connections)}")

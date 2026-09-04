@@ -74,7 +74,7 @@ class LivePipelineOrchestrator:
 
         # Pipelines and Engines
         self.source: Optional[VideoSource] = None
-        self.queue = BoundedFrameQueue(max_size=config.queue_max_size)
+        self.queue = BoundedFrameQueue(max_size=min(3, config.queue_max_size))
         self.environment_analyzer = EnvironmentAnalyzer()
         self.detector = ObjectDetector(model_path=config.model_path, device=config.device, confidence_threshold=config.detection_confidence)
         self.detection_filter = DetectionFilter(DetectionFilterConfig(min_confidence=config.detection_confidence))
@@ -258,6 +258,9 @@ class LivePipelineOrchestrator:
 
                 total_ms = (t_frame_end - t_frame_start) * 1000.0
                 self._stage_latencies_history["total"].append(total_ms)
+                if len(self._stage_latencies_history["total"]) > 100:
+                    for k in list(self._stage_latencies_history.keys()):
+                        self._stage_latencies_history[k] = self._stage_latencies_history[k][-100:]
                 self.metrics.frames_processed += 1
 
                 # 4. Measure FPS
@@ -394,6 +397,7 @@ class LivePipelineOrchestrator:
                         pkg_thread.start()
                         if not hasattr(self, "_evidence_threads"):
                             self._evidence_threads = []
+                        self._evidence_threads = [t for t in self._evidence_threads if t.is_alive()]
                         self._evidence_threads.append(pkg_thread)
         self._stage_latencies_history["evidence"].append((time.perf_counter() - t0) * 1000.0)
 

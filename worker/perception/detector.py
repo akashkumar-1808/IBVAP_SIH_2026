@@ -50,15 +50,33 @@ class ObjectDetector(DetectorInterface):
             if "cuda" in device and not torch.cuda.is_available():
                 raise UnsupportedDeviceError(f"Requested CUDA device '{device}' but CUDA is not available.")
 
+        # Constrain CPU thread contention on containerized environments
+        if "cpu" in self.device:
+            try:
+                if torch.get_num_threads() > 2:
+                    torch.set_num_threads(2)
+            except Exception:
+                pass
+
         self._model = None
         self._is_loaded = False
         self._warmup_done = False
         self._total_inferences = 0
         self._total_inference_time_sec = 0.0
 
+    @staticmethod
+    def _get_rss_mb() -> float:
+        try:
+            import psutil
+            return psutil.Process().memory_info().rss / (1024 * 1024)
+        except Exception:
+            return 0.0
+
     def load(self, model_path: Optional[str] = None) -> bool:
         """Loads model into memory and moves to configured compute device."""
         target_path = model_path or self.model_path
+        t0 = time.perf_counter()
+        rss_before = self._get_rss_mb()
 
         try:
             from ultralytics import YOLO
@@ -66,6 +84,12 @@ class ObjectDetector(DetectorInterface):
             logger.info(f"Loading detection model '{self.model_name}' from '{target_path}' on device '{self.device}'...")
             self._model = YOLO(target_path)
             self._is_loaded = True
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            rss_after = self._get_rss_mb()
+            logger.info(
+                f"[RESOURCE] detector.load: rss_before={rss_before:.1f}MB, rss_after={rss_after:.1f}MB, "
+                f"delta={rss_after - rss_before:+.1f}MB, elapsed={elapsed_ms:.1f}ms"
+            )
             logger.info(f"Detection model '{self.model_name}' loaded successfully.")
             return True
         except Exception as exc:
@@ -80,17 +104,26 @@ class ObjectDetector(DetectorInterface):
 
         warmup_size = input_size or self.input_size
         logger.info(f"Warming up detector with dummy {warmup_size[0]}x{warmup_size[1]} frame...")
+        t0 = time.perf_counter()
+        rss_before = self._get_rss_mb()
 
         try:
             dummy_image = np.zeros((warmup_size[1], warmup_size[0], 3), dtype=np.uint8)
-            self._model.predict(
-                source=dummy_image,
-                conf=self.confidence_threshold,
-                iou=self.iou_threshold,
-                device=self.device,
-                verbose=False,
-            )
+            with torch.inference_mode():
+                self._model.predict(
+                    source=dummy_image,
+                    conf=self.confidence_threshold,
+                    iou=self.iou_threshold,
+                    device=self.device,
+                    verbose=False,
+                )
             self._warmup_done = True
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            rss_after = self._get_rss_mb()
+            logger.info(
+                f"[RESOURCE] detector.warmup: rss_before={rss_before:.1f}MB, rss_after={rss_after:.1f}MB, "
+                f"delta={rss_after - rss_before:+.1f}MB, elapsed={elapsed_ms:.1f}ms"
+            )
             logger.info("Detector warmup completed successfully.")
             return True
         except Exception as exc:
@@ -116,14 +149,15 @@ class ObjectDetector(DetectorInterface):
         start_time = time.perf_counter()
 
         try:
-            results = self._model.predict(
-                source=frame_packet.image,
-                conf=self.confidence_threshold,
-                iou=self.iou_threshold,
-                device=self.device,
-                max_det=self.max_detections,
-                verbose=False,
-            )
+            with torch.inference_mode():
+                results = self._model.predict(
+                    source=frame_packet.image,
+                    conf=self.confidence_threshold,
+                    iou=self.iou_threshold,
+                    device=self.device,
+                    max_det=self.max_detections,
+                    verbose=False,
+                )
         except Exception as exc:
             logger.error(f"Inference error on camera '{frame_packet.camera_id}', frame {frame_packet.frame_id}: {exc}")
             raise ModelInferenceError(f"Model forward pass failed: {exc}") from exc

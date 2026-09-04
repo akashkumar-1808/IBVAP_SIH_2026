@@ -56,9 +56,9 @@ class EvidencePackager(EvidencePackagerInterface):
 
     def _get_or_create_buffer(self, camera_id: str) -> RollingFrameBuffer:
         if camera_id not in self._buffers:
-            # Buffer capacity = (pre_event_seconds + post_event_seconds + 10) * fps
-            max_seconds = self.config.pre_event_seconds + self.config.post_event_seconds + 10.0
-            self._buffers[camera_id] = RollingFrameBuffer(max_seconds=max_seconds, fps=self.config.fps)
+            # Buffer capacity: bound pre-event + post-event window to avoid memory bloat
+            max_seconds = min(10.0, self.config.pre_event_seconds + self.config.post_event_seconds + 2.0)
+            self._buffers[camera_id] = RollingFrameBuffer(max_seconds=max_seconds, fps=min(20.0, self.config.fps))
         return self._buffers[camera_id]
 
     def add_frame(self, frame_packet: FramePacket) -> None:

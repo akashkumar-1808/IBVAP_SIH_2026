@@ -455,6 +455,14 @@ def _resolve_video_path(raw_path: str) -> Optional[Path]:
     return None
 
 
+def _get_rss_mb() -> float:
+    try:
+        import psutil
+        return psutil.Process().memory_info().rss / (1024 * 1024)
+    except Exception:
+        return 0.0
+
+
 def _run_analysis_background(
     cam_id: str,
     video_file_path: Optional[str],
@@ -471,6 +479,10 @@ def _run_analysis_background(
     Catches all background exceptions, updates status to ERROR or COMPLETED, and cleans up resources.
     """
     from ...config import settings
+
+    t_bg_start = time.perf_counter()
+    rss_init = _get_rss_mb()
+    logger.info(f"[RUN_ANALYSIS] background_worker_invoked: session='{session_id}', rss={rss_init:.1f}MB")
 
     source_name = Path(video_file_path).name if video_file_path else mask_rtsp_url(rtsp_url or "")
     orchestrator: Optional[LivePipelineOrchestrator] = None
@@ -492,6 +504,7 @@ def _run_analysis_background(
             logger.debug(f"Database camera sync notice: {exc}")
 
         # B. Resolve model path and runtime storage directories
+        logger.info(f"[RUN_ANALYSIS] pipeline_init_start +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
         resolved_model_path = _resolve_model_path()
         evidence_dir = str(settings.evidence_path)
         runs_dir = str(settings.repo_root / "results" / "live_runs")
@@ -514,23 +527,39 @@ def _run_analysis_background(
         orchestrator.setup_prototype_border()
 
         # C. Open Video Source
+        logger.info(f"[RUN_ANALYSIS] video_open_start +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
         orchestrator.initialize_source()
         src_health = orchestrator.source.get_health()
-        logger.info(f"[VIDEO_SOURCE_OPENED] Video source successfully opened: '{source_name}' (health={src_health.state.value.upper()}, FPS={src_health.fps_measured:.1f})")
+        logger.info(
+            f"[RUN_ANALYSIS] video_opened +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms: "
+            f"'{source_name}' (health={src_health.state.value.upper()}, FPS={src_health.fps_measured:.1f})"
+        )
 
         # D. Read first frame from source
+        logger.info(f"[RUN_ANALYSIS] first_frame_start +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
         first_packet = orchestrator.source.read()
         if first_packet is None:
             raise RuntimeError(f"Unable to read initial frame from video source '{source_name}'")
+        logger.info(
+            f"[RUN_ANALYSIS] first_frame_received +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms: "
+            f"{first_packet.width}x{first_packet.height}"
+        )
 
         # E. Ensure YOLO is ready & warmed up
         if not getattr(orchestrator.detector, "_warmup_done", False):
+            logger.info(f"[RUN_ANALYSIS] model_load_start +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
             orchestrator.detector.load()
+            logger.info(f"[RUN_ANALYSIS] model_loaded +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
+            logger.info(f"[RUN_ANALYSIS] warmup_start +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
             orchestrator.detector.warmup()
+            logger.info(f"[RUN_ANALYSIS] warmup_complete +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
         logger.info(f"[YOLO_READY] YOLOv8n detector loaded from '{resolved_model_path}' and warmed up on device '{device}'")
 
         # F. First inference & initial visualization frame
+        logger.info(f"[RUN_ANALYSIS] inference_start +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
         raw_dets = orchestrator.detector.infer(first_packet)
+        logger.info(f"[RUN_ANALYSIS] inference_complete +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms: dets={len(raw_dets)}")
+
         camera_motion = orchestrator.camera_motion_estimator.update(first_packet.image)
         filt = orchestrator.detection_filter.filter_detections(
             raw_detections=raw_dets,
@@ -555,6 +584,7 @@ def _run_analysis_background(
 
         # G. Prime MJPEG stream buffer immediately with the rendered frame
         update_latest_frame(cam_id, initial_vis)
+        logger.info(f"[RUN_ANALYSIS] mjpeg_primed +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
 
         # H. Put first packet into queue so orchestrator processes it through the pipeline
         orchestrator.queue.put(first_packet)
@@ -598,7 +628,9 @@ def _run_analysis_background(
             "is_calibrated": True,
         }
         broadcast_telemetry_sync(initial_telemetry)
-        logger.info(f"[TELEMETRY_ACTIVE] Telemetry stream active and initial packet broadcasted over WebSocket")
+        logger.info(f"[RUN_ANALYSIS] telemetry_active +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
+        rss_running = _get_rss_mb()
+        logger.info(f"[RESOURCE] background pipeline active: rss={rss_running:.1f}MB, delta={rss_running - rss_init:+.1f}MB")
 
         # K. Register in active orchestrator table
         _RUNNING_ORCHESTRATORS[cam_id] = orchestrator
@@ -911,10 +943,12 @@ def run_analysis(request: RunAnalysisRequest):
     and returns HTTP 200 with status ANALYZING immediately (< 100ms) while analysis continues.
     Enforces single-session concurrency: cleanly rejects concurrent runs if another analysis is active.
     """
+    t_req_start = time.perf_counter()
+    rss_before = _get_rss_mb()
     cam_id = request.camera_id.strip()
     raw_path = request.video_file_path.strip()
 
-    logger.info(f"[RUN_ANALYSIS_REQUEST] Run Analysis request received for camera: '{cam_id}', path: '{raw_path}'")
+    logger.info(f"[RUN_ANALYSIS] request_received: camera='{cam_id}', path='{raw_path}', rss={rss_before:.1f}MB")
 
     # 1. Path Resolution across server locations
     resolved_path = _resolve_video_path(raw_path)
@@ -926,7 +960,10 @@ def run_analysis(request: RunAnalysisRequest):
         logger.error(f"Run Analysis failed: Video file not readable at '{resolved_path}'")
         raise HTTPException(status_code=400, detail=f"Video file not readable at '{resolved_path}'")
 
-    logger.info(f"[UPLOAD_RESOLVED] Video source resolved to: '{resolved_path}' ({resolved_path.stat().st_size} bytes)")
+    logger.info(
+        f"[RUN_ANALYSIS] upload_resolved +{(time.perf_counter() - t_req_start)*1000.0:.1f}ms: "
+        f"'{resolved_path}' ({resolved_path.stat().st_size} bytes)"
+    )
 
     # 2. Concurrency Protection (Only ONE analysis session may run at a time)
     with _ANALYSIS_LOCK:
@@ -961,7 +998,7 @@ def run_analysis(request: RunAnalysisRequest):
 
         # 3. Create Unique Session Identifier
         session_id = f"ses_{int(time.time() * 1000)}_{cam_id}"
-        logger.info(f"[ANALYSIS_JOB_CREATED] Analysis job created: session_id='{session_id}' for camera '{cam_id}' on '{resolved_path.name}'")
+        logger.info(f"[RUN_ANALYSIS] session_created +{(time.perf_counter() - t_req_start)*1000.0:.1f}ms: session_id='{session_id}'")
 
         # Ensure camera registered in local memory registry
         cam_entry = {
@@ -984,6 +1021,7 @@ def run_analysis(request: RunAnalysisRequest):
             _CAMERAS_REGISTRY[existing_idx] = cam_entry
         else:
             _CAMERAS_REGISTRY.append(cam_entry)
+        logger.info(f"[RUN_ANALYSIS] camera_ready +{(time.perf_counter() - t_req_start)*1000.0:.1f}ms")
 
         # 4. Mark status as ANALYZING immediately
         _ANALYSIS_STATUS[cam_id] = {
@@ -1005,7 +1043,18 @@ def run_analysis(request: RunAnalysisRequest):
         )
         worker_thread.start()
         _RUNNING_THREADS[cam_id] = worker_thread
-        logger.info(f"[ANALYSIS_BACKGROUND_STARTED] Background analysis thread '{worker_thread.name}' started for session '{session_id}'")
+        logger.info(
+            f"[RUN_ANALYSIS] background_started +{(time.perf_counter() - t_req_start)*1000.0:.1f}ms: "
+            f"thread='{worker_thread.name}'"
+        )
+
+    rss_after = _get_rss_mb()
+    elapsed_ms = (time.perf_counter() - t_req_start) * 1000.0
+    logger.info(
+        f"[RESOURCE] rss_before={rss_before:.1f}MB, rss_after={rss_after:.1f}MB, "
+        f"delta={rss_after - rss_before:+.1f}MB, elapsed={elapsed_ms:.1f}ms"
+    )
+    logger.info(f"[RUN_ANALYSIS] response_returning +{elapsed_ms:.1f}ms")
 
     # 6. Return immediate HTTP response (< 100ms)
     return {
@@ -1038,6 +1087,8 @@ def stop_analysis(request: StopAnalysisRequest):
         "status": "COMPLETED",
         "stopped_at": datetime.now(timezone.utc).isoformat(),
     }
+    from .streams import _LATEST_FRAMES
+    _LATEST_FRAMES.pop(cam_id, None)
     logger.info(f"[ANALYSIS_STOPPED] Operator stopped analysis on camera '{cam_id}'")
     import gc
     gc.collect()

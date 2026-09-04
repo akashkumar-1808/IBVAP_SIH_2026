@@ -59,5 +59,6 @@ class EventRepository(BaseRepository):
                 "is_acknowledged": True,
                 "acknowledged_by": acknowledged_by,
                 "acknowledged_at": datetime.utcnow().isoformat(),
+                "status": "RESOLVED",
             },
         )

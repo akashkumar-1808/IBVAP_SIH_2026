@@ -282,16 +282,30 @@ class EvidencePackager(EvidencePackagerInterface):
             for art in manifest.artifacts:
                 art_path = os.path.join(package.package_dir, art.file_name)
                 record_id = f"evr_{package.event_id}_{art.file_name.replace('.', '_')}"
-                repo.upsert(
-                    record_id,
+
+                f_lower = art.file_name.lower()
+                if "raw" in f_lower:
+                    ev_type = "SNAPSHOT_RAW"
+                elif "annotated" in f_lower:
+                    ev_type = "SNAPSHOT_ANNOTATED"
+                elif "incident" in f_lower:
+                    ev_type = "INCIDENT_CLIP"
+                elif "pre" in f_lower:
+                    ev_type = "PRE_EVENT_CLIP"
+                else:
+                    ev_type = "MANIFEST"
+
+                cloud_ref = f"{package.camera_id}/{package.event_id}/{art.file_name}"
+
+                repo.insert(
                     {
                         "id": record_id,
                         "event_id": package.event_id,
                         "camera_id": package.camera_id,
                         "track_id": manifest.track_id,
-                        "evidence_type": art.file_name.split(".")[0],
+                        "evidence_type": ev_type,
                         "storage_reference": art_path,
-                        "source_reference": f"{package.camera_id}_stream",
+                        "source_reference": cloud_ref,
                         "start_time_utc": manifest.first_observed_utc.isoformat(),
                         "end_time_utc": manifest.last_observed_utc.isoformat(),
                         "file_size_bytes": art.file_size_bytes,
@@ -303,7 +317,7 @@ class EvidencePackager(EvidencePackagerInterface):
                     }
                 )
         except Exception as exc:
-            logger.debug(f"Could not persist evidence records to DB: {exc}")
+            logger.warning(f"Could not persist evidence records to DB: {exc}")
 
     def verify_package(self, manifest_path: str) -> Tuple[bool, List[str]]:
         """Verifies package integrity against manifest checksums."""

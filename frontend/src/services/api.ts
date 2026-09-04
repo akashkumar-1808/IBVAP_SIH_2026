@@ -133,3 +133,100 @@ export function getEvidenceFileUrl(evidenceId: string): string {
 export function getStreamUrl(cameraId: string): string {
   return `${API_BASE}/streams/${cameraId}/live`;
 }
+
+export async function uploadAnalysisVideo(
+  file: File,
+  cameraId: string = 'DEMO-CAM-01',
+  onProgress?: (percent: number) => void
+): Promise<{
+  status: string;
+  file_name: string;
+  video_path: string;
+  file_size_bytes: number;
+  camera_id: string;
+  message: string;
+}> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('camera_id', cameraId);
+
+    xhr.open('POST', `${API_BASE}/cameras/upload`);
+
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          onProgress(pct);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          resolve({
+            status: 'READY TO ANALYZE',
+            file_name: file.name,
+            video_path: '',
+            file_size_bytes: file.size,
+            camera_id: cameraId,
+            message: 'Uploaded',
+          });
+        }
+      } else {
+        try {
+          const err = JSON.parse(xhr.responseText);
+          reject(new Error(err.detail || 'Upload failed'));
+        } catch {
+          reject(new Error(`Upload failed with status ${xhr.status}`));
+        }
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error during video upload'));
+    xhr.send(formData);
+  });
+}
+
+export async function runAnalysis(params: {
+  camera_id: string;
+  video_file_path: string;
+  device?: string;
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/cameras/run-analysis`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Failed to start analysis');
+  }
+  return res.json();
+}
+
+export async function stopAnalysis(cameraId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/cameras/stop-analysis`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ camera_id: cameraId }),
+  });
+  if (!res.ok) throw new Error(`Failed to stop analysis for ${cameraId}`);
+  return res.json();
+}
+
+export async function fetchAnalysisStatus(cameraId: string): Promise<{
+  camera_id: string;
+  status: 'READY' | 'UPLOADING' | 'READY TO ANALYZE' | 'ANALYZING' | 'COMPLETED' | 'ERROR';
+  file_name?: string;
+  video_path?: string;
+  is_running: boolean;
+}> {
+  const res = await fetch(`${API_BASE}/cameras/${cameraId}/analysis-status`);
+  if (!res.ok) throw new Error(`Failed to fetch analysis status`);
+  return res.json();
+}

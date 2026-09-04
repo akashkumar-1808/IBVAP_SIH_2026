@@ -86,7 +86,11 @@ class LivePipelineOrchestrator:
         self.spatial_engine = SpatialEngine()
         self.behavior_engine = BehaviorEngine()
         self.fusion_engine = FusionEngine()
-        self.evidence_packager = EvidencePackager(EvidencePackageConfig(storage_root=config.evidence_storage_dir))
+        self.evidence_packager = EvidencePackager(EvidencePackageConfig(
+            storage_root=config.evidence_storage_dir,
+            auto_upload_supabase=True,
+            auto_persist_db=True,
+        ))
         self.visualizer = LiveStreamVisualizer(camera_id=config.camera_id)
 
         # Video Recorder for --record-debug
@@ -350,16 +354,29 @@ class LivePipelineOrchestrator:
                     matching_sp = next((s for s in spatial_states if s.track_id == ev.track_id), None)
                     if matching_tr and matching_sp:
                         import threading
-                        def _async_package(e_copy, tr_copy, sp_copy):
+                        frame_snapshot = img.copy()
+                        active_borders = [self._latest_projected_border] if self._latest_projected_border else None
+
+                        def _async_package(e_copy, tr_copy, sp_copy, kf_image, borders):
                             try:
-                                pkg = self.evidence_packager.create_package(e_copy, tr_copy, sp_copy)
+                                pkg = self.evidence_packager.create_package(
+                                    event=e_copy,
+                                    track=tr_copy,
+                                    spatial_state=sp_copy,
+                                    projected_borders=borders,
+                                    current_frame=kf_image,
+                                )
                                 self.metrics.total_evidence_packages += 1
                                 seal_preview = pkg.sha256_seal[:16] if pkg.sha256_seal else "sealed"
                                 print(f"Evidence Package Sealed: {pkg.id} [SHA-256: {seal_preview}...]")
                             except Exception as ex:
                                 logger.error(f"Async evidence packaging error: {ex}")
 
-                        threading.Thread(target=_async_package, args=(ev, matching_tr, matching_sp), daemon=True).start()
+                        threading.Thread(
+                            target=_async_package,
+                            args=(ev, matching_tr, matching_sp, frame_snapshot, active_borders),
+                            daemon=True,
+                        ).start()
 
                 if not any(e.id == ev.id for e in self._recorded_events):
                     self._recorded_events.append(ev)

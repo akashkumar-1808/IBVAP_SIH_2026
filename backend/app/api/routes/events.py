@@ -70,7 +70,13 @@ def get_event_evidence(event_id: str):
 
     # Check for manifest on disk if available
     manifest_data = None
+    from ...config import settings
     local_manifest_path = os.path.join("storage", "evidence", camera_id, event_id, "manifest.json")
+    if not os.path.exists(local_manifest_path):
+        alt_manifest = settings.evidence_path / camera_id / event_id / "manifest.json"
+        if alt_manifest.exists():
+            local_manifest_path = str(alt_manifest)
+
     if os.path.exists(local_manifest_path):
         try:
             with open(local_manifest_path, "r", encoding="utf-8") as f:
@@ -82,19 +88,20 @@ def get_event_evidence(event_id: str):
         from datetime import timezone
         for art in manifest_data.get("artifacts", []):
             f_name = art.get("file_name", "")
-            if "raw" in f_name:
+            f_lower = f_name.lower()
+            if "raw" in f_lower:
                 ev_type = "SNAPSHOT_RAW"
-            elif "annotated" in f_name:
+            elif "annotated" in f_lower:
                 ev_type = "SNAPSHOT_ANNOTATED"
-            elif "incident" in f_name:
+            elif "incident" in f_lower:
                 ev_type = "INCIDENT_CLIP"
-            elif "pre" in f_name:
+            elif "pre" in f_lower:
                 ev_type = "PRE_EVENT_CLIP"
             else:
                 ev_type = "MANIFEST"
 
             rec_id = f"ev_rec_{event_id}_{ev_type.lower()}"
-            file_path = os.path.join("storage", "evidence", camera_id, event_id, f_name)
+            file_path = os.path.join(os.path.dirname(local_manifest_path), f_name)
             rec = {
                 "id": rec_id,
                 "event_id": event_id,
@@ -111,11 +118,16 @@ def get_event_evidence(event_id: str):
             evidence_records.append(rec)
 
     status_str = "sealed" if (evidence_records or manifest_data) else "pending"
-    sha256_seal = (
-        manifest_data.get("artifacts", [{}])[-1].get("sha256_hash")
-        if manifest_data and manifest_data.get("artifacts")
-        else (manifest_data.get("sealed_at_utc") if manifest_data else None)
-    )
+    sha256_seal = None
+    if os.path.exists(local_manifest_path):
+        import hashlib
+        try:
+            with open(local_manifest_path, "rb") as f:
+                sha256_seal = hashlib.sha256(f.read()).hexdigest()
+        except Exception:
+            pass
+    if not sha256_seal and manifest_data and manifest_data.get("artifacts"):
+        sha256_seal = manifest_data.get("artifacts")[0].get("sha256_hash")
 
     return EvidencePackageResponse(
         event_id=event_id,

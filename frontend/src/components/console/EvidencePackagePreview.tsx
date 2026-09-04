@@ -16,10 +16,22 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [verificationResult, setVerificationResult] = useState<{ is_valid?: boolean; details?: string } | null>(null);
 
-  const rawRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'SNAPSHOT_RAW');
-  const annRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'SNAPSHOT_ANNOTATED');
-  const incRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'CLIP_INCIDENT' || r.evidence_type === 'VIDEO_INCIDENT');
-  const preRec = evidencePackage?.evidence_records.find((r) => r.evidence_type === 'CLIP_PRE_EVENT' || r.evidence_type === 'VIDEO_PRE_EVENT');
+  const rawRec = evidencePackage?.evidence_records.find((r) => {
+    const t = (r.evidence_type || '').toUpperCase();
+    return t.includes('RAW');
+  });
+  const annRec = evidencePackage?.evidence_records.find((r) => {
+    const t = (r.evidence_type || '').toUpperCase();
+    return t.includes('ANNOTATED') || t.includes('FORENSIC');
+  });
+  const incRec = evidencePackage?.evidence_records.find((r) => {
+    const t = (r.evidence_type || '').toUpperCase();
+    return t.includes('INCIDENT');
+  });
+  const preRec = evidencePackage?.evidence_records.find((r) => {
+    const t = (r.evidence_type || '').toUpperCase();
+    return t.includes('PRE');
+  });
 
   const eventIdDisplay = event?.id || evidencePackage?.event_id || '--';
   const sha256Seal = evidencePackage?.sha256_seal || annRec?.sha256 || rawRec?.sha256;
@@ -256,7 +268,18 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
                   <video
                     controls
                     src={getEvidenceFileUrl(incRec.id)}
-                    style={{ width: '100%', borderRadius: '4px', maxHeight: '360px', backgroundColor: '#000' }}
+                    style={{ width: '100%', borderRadius: '4px', maxHeight: '320px', backgroundColor: '#000' }}
+                  />
+                </div>
+              )}
+
+              {preRec && (
+                <div>
+                  <h4 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-muted)', marginBottom: '6px' }}>PRE-EVENT BUFFER CLIP (PLAYABLE)</h4>
+                  <video
+                    controls
+                    src={getEvidenceFileUrl(preRec.id)}
+                    style={{ width: '100%', borderRadius: '4px', maxHeight: '320px', backgroundColor: '#000' }}
                   />
                 </div>
               )}

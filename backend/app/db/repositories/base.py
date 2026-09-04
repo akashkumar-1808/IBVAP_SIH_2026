@@ -52,10 +52,12 @@ class BaseRepository:
             res = table.select("*").eq("id", item_id).limit(1).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
-            return None
+            return _MEMORY_TABLES[self.table_name].get(str(item_id))
         except Exception as exc:
             self._handle_db_error(exc, f"fetching by id '{item_id}'")
             return _MEMORY_TABLES[self.table_name].get(str(item_id))
+
+    get = get_by_id
 
     def list_all(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         """List records with pagination."""
@@ -76,6 +78,12 @@ class BaseRepository:
         """Insert a single record and return the created entity."""
         record_id = str(record_data.get("id") or record_data.get("evidence_id") or "")
         if record_id:
+            existing = _MEMORY_TABLES[self.table_name].get(record_id)
+            if existing and existing.get("is_acknowledged"):
+                record_data["is_acknowledged"] = True
+                record_data["acknowledged_by"] = existing.get("acknowledged_by")
+                record_data["acknowledged_at"] = existing.get("acknowledged_at")
+                record_data["status"] = existing.get("status", "RESOLVED")
             _MEMORY_TABLES[self.table_name][record_id] = dict(record_data)
 
         table = self._get_table()
@@ -104,7 +112,9 @@ class BaseRepository:
         try:
             res = table.update(updates).eq("id", item_id).execute()
             if res.data and len(res.data) > 0:
-                return res.data[0]
+                merged = dict(res.data[0])
+                merged.update(updates)
+                return merged
             return _MEMORY_TABLES[self.table_name].get(str_id)
         except Exception as exc:
             self._handle_db_error(exc, f"updating id '{item_id}'")

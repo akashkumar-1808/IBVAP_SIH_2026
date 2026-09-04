@@ -65,3 +65,4 @@ class PipelineConfig(BaseModel):
     detection_confidence: float = 0.40
     record_output_dir: str = "results/live_runs"
     evidence_storage_dir: str = "storage/evidence"
+    loop_video: bool = False

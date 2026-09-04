@@ -30,8 +30,24 @@ event_repo = EventRepository()
 evidence_repo = EvidenceRepository()
 camera_repo = CameraRepository()
 
-# Dynamic in-memory camera registry
-_CAMERAS_REGISTRY: List[Dict[str, Any]] = []
+# Dynamic in-memory camera registry pre-populated with primary demo camera
+_CAMERAS_REGISTRY: List[Dict[str, Any]] = [
+    {
+        "camera_id": "DEMO-CAM-01",
+        "name": "SIH Sector Alpha Border Camera",
+        "rtsp_url": "storage/samples/test_video.mp4",
+        "video_file_path": "storage/samples/test_video.mp4",
+        "sector_id": "SECTOR-B07",
+        "sector_name": "Northern Border Sector",
+        "status": "ONLINE",
+        "resolution": "1280x720",
+        "fps_target": 25.0,
+        "is_calibrated": True,
+        "location": {"lat": 28.6139, "lng": 77.2090, "elevation_m": 12.5},
+        "visible_border_sections": ["SEC-ALPHA"],
+        "connected_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+]
 
 # Active background orchestrators & worker threads
 _RUNNING_ORCHESTRATORS: Dict[str, LivePipelineOrchestrator] = {}
@@ -40,7 +56,7 @@ _ANALYSIS_STATUS: Dict[str, Dict[str, Any]] = {}
 
 
 class UploadVideoResponse(BaseModel):
-    status: str = Field(..., description="Source status: READY TO ANALYZE or ERROR")
+    status: str = Field(..., description="Source status: READY TO ANALYZE or READY")
     file_name: str
     video_path: str
     file_size_bytes: int
@@ -83,77 +99,13 @@ def get_camera(camera_id: str):
     return cam
 
 
-@router.post("/connect", response_model=Dict[str, Any])
-def connect_rtsp_camera(request: ConnectCameraRequest):
-    """
-    Connects to a live RTSP stream or local MP4 video file, starts the 9-stage intelligence
-    pipeline in a background worker, and streams frames + telemetry directly to the operator console.
-    """
-    cam_id = request.camera_id.strip()
-    rtsp_url = request.rtsp_url.strip() if request.rtsp_url else None
-    video_file_path = request.video_file_path.strip() if request.video_file_path else None
-
-    if not rtsp_url and not video_file_path:
-        raise HTTPException(
-            status_code=400,
-            detail="Either 'rtsp_url' or 'video_file_path' must be provided.",
-        )
-
-    # 1. If camera already running, stop previous worker first
-    if cam_id in _RUNNING_ORCHESTRATORS:
-        try:
-            _RUNNING_ORCHESTRATORS[cam_id].stop()
-        except Exception:
-            pass
-        _RUNNING_ORCHESTRATORS.pop(cam_id, None)
-        _RUNNING_THREADS.pop(cam_id, None)
-
-    # 2. Configure Pipeline for live RTSP stream or offline MP4 file
-    config = PipelineConfig(
-        camera_id=cam_id,
-        rtsp_url=rtsp_url,
-        file_path=video_file_path,
-        run_mode=RunMode.HEADLESS,
-        device=request.device or "cpu",
-        status_interval_seconds=5.0,
-    )
-
-    try:
-        orchestrator = LivePipelineOrchestrator(config)
-        # Setup prototype calibrated world-border for spatial analysis
-        orchestrator.setup_prototype_border()
-        # Initialize video ingestion source (with model warmup)
-        orchestrator.initialize_source()
-
-        # Pre-seed initial frame into MJPEG stream buffer for instantaneous (<25ms) browser display
-        try:
-            initial_packet = orchestrator.source.read()
-            if initial_packet is not None:
-                initial_vis = orchestrator.visualizer.render_frame(
-                    frame=initial_packet.image,
-                    tracks=[],
-                    spatial_states=[],
-                    behavior_primitives=[],
-                    events=[],
-                    environment=None,
-                    projected_border=orchestrator._latest_projected_border,
-                    is_calibrated=orchestrator._is_calibrated,
-                    fps=25.0,
-                )
-                update_latest_frame(cam_id, initial_vis)
-                orchestrator.queue.put(initial_packet)
-        except Exception as exc:
-            logger.debug(f"Pre-seed initial frame notice: {exc}")
-    except Exception as exc:
-        source_desc = mask_rtsp_url(rtsp_url) if rtsp_url else video_file_path
-        logger.error(f"Failed to connect camera {cam_id} with source '{source_desc}': {exc}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unable to connect to source '{source_desc}'. Reason: {str(exc)}",
-        )
-
-    # 3. Setup real-time frame and telemetry broadcast hook
+def _build_on_frame_callback(cam_id: str, rtsp_url: Optional[str], sector_id: str, session_id: str):
+    """Builds unified telemetry and MJPEG stream broadcast callback for a running pipeline."""
     def on_frame_callback(packet, env_state, detections, tracks, spatial_states, behaviors, events, fps, vis_image=None):
+        orch = _RUNNING_ORCHESTRATORS.get(cam_id)
+        if not orch:
+            return
+
         # Update MJPEG stream frame buffer for browser display with real rendered HUD
         stream_image = vis_image if vis_image is not None else packet.image
         update_latest_frame(cam_id, stream_image)
@@ -320,7 +272,10 @@ def connect_rtsp_camera(request: ConnectCameraRequest):
                 "explanation_summary": ev.explanation_summary,
             }
             formatted_events.append(ev_dict)
-            event_repo.insert(ev_dict)
+            try:
+                event_repo.insert(ev_dict)
+            except Exception as e_err:
+                logger.debug(f"Notice inserting event to repo: {e_err}")
 
             events_contract.append({
                 "event_id": ev.id,
@@ -332,6 +287,15 @@ def connect_rtsp_camera(request: ConnectCameraRequest):
                 "reason_codes": [rc.value.upper() if hasattr(rc, "value") else str(rc).upper() for rc in ev.reason_codes],
                 "explanation_summary": ev.explanation_summary,
             })
+
+        # State machine transition: update analysis status if an actionable security event occurs
+        has_critical_event = any(e["priority"] in ("HIGH", "CRITICAL") for e in formatted_events)
+        if has_critical_event:
+            _ANALYSIS_STATUS.setdefault(cam_id, {})["status"] = "EVENT_DETECTED"
+            if formatted_events:
+                _ANALYSIS_STATUS[cam_id]["last_event_id"] = formatted_events[0]["id"]
+        elif _ANALYSIS_STATUS.get(cam_id, {}).get("status") == "EVENT_DETECTED":
+            _ANALYSIS_STATUS[cam_id]["status"] = "ANALYZING"
 
         # Primary track context for border track pillar
         primary_track = tracks[0] if tracks else None
@@ -353,7 +317,7 @@ def connect_rtsp_camera(request: ConnectCameraRequest):
 
         # Sector normality context
         sector_context_payload = {
-            "sector_id": request.sector_id or "SECTOR-B07",
+            "sector_id": sector_id,
             "normality_state": "UNUSUAL_ACTIVITY" if any(e["risk_score"] > 60 for e in formatted_events) else "NORMAL",
             "expected_density": 0.05,
             "observed_count": len(tracks),
@@ -364,10 +328,10 @@ def connect_rtsp_camera(request: ConnectCameraRequest):
         # Camera contract metrics
         now_dt = datetime.now(timezone.utc)
         frame_age_ms = round((now_dt - packet.timestamp_utc).total_seconds() * 1000.0, 1)
-        src_health = orchestrator.source.get_health() if orchestrator.source else None
+        src_health = orch.source.get_health() if orch.source else None
         conn_status = src_health.state.value.upper() if src_health else "ONLINE"
         src_fps = src_health.fps_measured if src_health and src_health.fps_measured > 0 else (packet.source_fps or 25.0)
-        avg_lat = orchestrator._stage_latencies_history["total"][-1] if orchestrator._stage_latencies_history.get("total") else 40.0
+        avg_lat = orch._stage_latencies_history["total"][-1] if orch._stage_latencies_history.get("total") else 40.0
 
         camera_contract = {
             "camera_id": cam_id,
@@ -395,6 +359,8 @@ def connect_rtsp_camera(request: ConnectCameraRequest):
 
         # Build unified real-time telemetry packet
         telemetry_payload = {
+            "session_id": session_id,
+            "analysis_status": _ANALYSIS_STATUS.get(cam_id, {}).get("status", "ANALYZING"),
             "camera": camera_contract,
             "environment": env_contract,
             "detections": formatted_detections,
@@ -415,33 +381,178 @@ def connect_rtsp_camera(request: ConnectCameraRequest):
         }
         broadcast_telemetry_sync(telemetry_payload)
 
-    orchestrator.on_frame_processed = on_frame_callback
+    return on_frame_callback
 
-    # 4. Spawn background execution thread
-    def _pipeline_worker_runner():
+
+def _start_pipeline_for_camera(
+    cam_id: str,
+    video_file_path: Optional[str],
+    rtsp_url: Optional[str],
+    device: str,
+    session_id: str,
+    sector_id: str = "SECTOR-B07",
+    sector_name: str = "Northern Border Sector",
+):
+    """
+    Asynchronous runner executing the full 9-stage LivePipelineOrchestrator.
+    Handles startup, frame loop, EOF completion, and error states reliably.
+    """
+    logger.info(f"[{session_id}] Worker thread started for camera '{cam_id}' on source '{video_file_path or rtsp_url}'")
+    try:
+        config = PipelineConfig(
+            camera_id=cam_id,
+            rtsp_url=rtsp_url,
+            file_path=video_file_path,
+            run_mode=RunMode.HEADLESS,
+            device=device,
+            status_interval_seconds=5.0,
+            loop_video=False,  # Video finishes at EOF so COMPLETED status triggers
+        )
+
+        logger.info(f"[{session_id}] Initializing LivePipelineOrchestrator with device '{device}'...")
+        orchestrator = LivePipelineOrchestrator(config)
+
+        logger.info(f"[{session_id}] Configuring prototype calibrated world-border...")
+        orchestrator.setup_prototype_border()
+
+        logger.info(f"[{session_id}] Initializing video source & model warmup...")
+        orchestrator.initialize_source()
+
+        # Pre-seed initial frame into MJPEG stream buffer for instantaneous (<25ms) browser display
         try:
-            _ANALYSIS_STATUS[cam_id] = {
-                "status": "ANALYZING",
-                "video_path": video_file_path or rtsp_url,
-                "file_name": Path(video_file_path).name if video_file_path else "Live Stream",
-                "started_at": datetime.now(timezone.utc).isoformat(),
-            }
-            orchestrator.run()
+            initial_packet = orchestrator.source.read()
+            if initial_packet is not None:
+                initial_vis = orchestrator.visualizer.render_frame(
+                    frame=initial_packet.image,
+                    tracks=[],
+                    spatial_states=[],
+                    behavior_primitives=[],
+                    events=[],
+                    environment=None,
+                    projected_border=orchestrator._latest_projected_border,
+                    is_calibrated=orchestrator._is_calibrated,
+                    fps=25.0,
+                )
+                update_latest_frame(cam_id, initial_vis)
+                orchestrator.queue.put(initial_packet)
+                logger.info(f"[{session_id}] Pre-seeded initial frame to MJPEG stream buffer.")
         except Exception as exc:
-            logger.error(f"Pipeline worker error on '{cam_id}': {exc}")
-            _ANALYSIS_STATUS[cam_id] = {"status": "ERROR", "error": str(exc)}
-        finally:
-            curr = _ANALYSIS_STATUS.get(cam_id, {})
-            if curr.get("status") == "ANALYZING":
-                curr["status"] = "COMPLETED"
+            logger.debug(f"[{session_id}] Initial frame pre-seed notice: {exc}")
 
-    thread = threading.Thread(target=_pipeline_worker_runner, name=f"IBVAP-Pipeline-{cam_id}", daemon=True)
+        # Register callback
+        orchestrator.on_frame_processed = _build_on_frame_callback(cam_id, rtsp_url, sector_id, session_id)
+        _RUNNING_ORCHESTRATORS[cam_id] = orchestrator
+
+        # Transition state: STARTING -> ANALYZING
+        _ANALYSIS_STATUS.setdefault(cam_id, {})["status"] = "ANALYZING"
+        _ANALYSIS_STATUS[cam_id]["session_id"] = session_id
+        logger.info(f"[{session_id}] Pipeline state transitioned to ANALYZING. Starting processing loop...")
+
+        # Main frame processing loop
+        orchestrator.run()
+
+        # Video completion at EOF
+        logger.info(f"[{session_id}] Pipeline frame loop finished (EOF reached). Transitioning to COMPLETED.")
+        _ANALYSIS_STATUS.setdefault(cam_id, {})["status"] = "COMPLETED"
+        _ANALYSIS_STATUS[cam_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+
+        # Broadcast completion status over WebSocket
+        broadcast_telemetry_sync({
+            "camera_id": cam_id,
+            "session_id": session_id,
+            "analysis_status": "COMPLETED",
+            "status": "COMPLETED",
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        })
+
+    except Exception as exc:
+        logger.error(f"[{session_id}] Pipeline worker exception on '{cam_id}': {exc}", exc_info=True)
+        _ANALYSIS_STATUS.setdefault(cam_id, {})["status"] = "ERROR"
+        _ANALYSIS_STATUS[cam_id]["error"] = str(exc)
+        broadcast_telemetry_sync({
+            "camera_id": cam_id,
+            "session_id": session_id,
+            "analysis_status": "ERROR",
+            "status": "ERROR",
+            "error": str(exc),
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        })
+    finally:
+        _RUNNING_ORCHESTRATORS.pop(cam_id, None)
+        curr = _ANALYSIS_STATUS.get(cam_id, {})
+        if curr.get("status") in ("STARTING", "ANALYZING", "EVENT_DETECTED"):
+            curr["status"] = "COMPLETED"
+            curr["completed_at"] = datetime.now(timezone.utc).isoformat()
+        logger.info(f"[{session_id}] Pipeline worker terminated cleanly for camera '{cam_id}'")
+
+
+@router.post("/connect", response_model=Dict[str, Any])
+def connect_rtsp_camera(request: ConnectCameraRequest):
+    """
+    Connects to a live RTSP stream or local MP4 video file, starts the 9-stage intelligence
+    pipeline in a background worker, and streams frames + telemetry directly to the operator console.
+    """
+    cam_id = request.camera_id.strip()
+    rtsp_url = request.rtsp_url.strip() if request.rtsp_url else None
+    video_file_path = request.video_file_path.strip() if request.video_file_path else None
+
+    if not rtsp_url and not video_file_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Either 'rtsp_url' or 'video_file_path' must be provided.",
+        )
+
+    # 1. Stop previous worker cleanly
+    if cam_id in _RUNNING_ORCHESTRATORS:
+        try:
+            _RUNNING_ORCHESTRATORS[cam_id].stop()
+        except Exception:
+            pass
+        _RUNNING_ORCHESTRATORS.pop(cam_id, None)
+        if cam_id in _RUNNING_THREADS:
+            _RUNNING_THREADS[cam_id].join(timeout=1.0)
+            _RUNNING_THREADS.pop(cam_id, None)
+
+    # 2. If RTSP stream, verify connectivity first
+    if rtsp_url:
+        from worker.ingestion.rtsp_source import RTSPVideoSource
+        test_source = RTSPVideoSource(camera_id=cam_id, rtsp_url=rtsp_url, max_reconnect_attempts=1)
+        if not test_source.connect():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unable to connect to RTSP source '{mask_rtsp_url(rtsp_url)}'",
+            )
+        test_source.close()
+
+    session_id = f"ses_{int(time.time() * 1000)}_{cam_id}"
+    _ANALYSIS_STATUS[cam_id] = {
+        "session_id": session_id,
+        "status": "STARTING",
+        "camera_id": cam_id,
+        "video_path": video_file_path or rtsp_url,
+        "file_name": Path(video_file_path).name if video_file_path else "Live Stream",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # 3. Spawn background execution thread
+    thread = threading.Thread(
+        target=_start_pipeline_for_camera,
+        args=(
+            cam_id,
+            video_file_path,
+            rtsp_url,
+            request.device or "cpu",
+            session_id,
+            request.sector_id or "SECTOR-B07",
+            request.sector_name or "Northern Border",
+        ),
+        name=f"IBVAP-Pipeline-{cam_id}",
+        daemon=True,
+    )
     thread.start()
-
-    _RUNNING_ORCHESTRATORS[cam_id] = orchestrator
     _RUNNING_THREADS[cam_id] = thread
 
-    # 5. Register in Camera Registry
+    # 4. Register in Camera Registry
     display_source = mask_rtsp_url(rtsp_url) if rtsp_url else f"FILE: {video_file_path}"
     cam_entry = {
         "camera_id": cam_id,
@@ -459,36 +570,31 @@ def connect_rtsp_camera(request: ConnectCameraRequest):
         "connected_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Replace existing or append in memory
     existing_idx = next((i for i, c in enumerate(_CAMERAS_REGISTRY) if c["camera_id"] == cam_id), None)
     if existing_idx is not None:
         _CAMERAS_REGISTRY[existing_idx] = cam_entry
     else:
         _CAMERAS_REGISTRY.append(cam_entry)
 
-    # Persist camera in database so events foreign key constraint is satisfied
     try:
         existing_db_cam = camera_repo.get(cam_id)
         if not existing_db_cam:
             camera_repo.insert({
                 "id": cam_id,
                 "name": request.name or f"Camera {cam_id}",
-                "rtsp_url": display_source,
-                "sector_id": request.sector_id or "SECTOR-B07",
-                "sector_name": request.sector_name or "Northern Border",
                 "status": "ONLINE",
                 "is_active": True,
             })
     except Exception as exc:
         logger.debug(f"Database camera sync notice: {exc}")
 
-    logger.info(f"Camera '{cam_id}' ({display_source}) successfully connected and pipeline worker started.")
+    logger.info(f"Camera '{cam_id}' ({display_source}) connected, session '{session_id}' started.")
     return {
         "status": "CONNECTED",
+        "session_id": session_id,
         "message": f"Pipeline active for camera '{cam_id}' on {display_source}",
         "camera": cam_entry,
     }
-
 
 
 @router.post("/{camera_id}/disconnect", response_model=Dict[str, Any])
@@ -500,7 +606,9 @@ def disconnect_camera(camera_id: str):
         except Exception:
             pass
         _RUNNING_ORCHESTRATORS.pop(camera_id, None)
-        _RUNNING_THREADS.pop(camera_id, None)
+        if camera_id in _RUNNING_THREADS:
+            _RUNNING_THREADS[camera_id].join(timeout=1.0)
+            _RUNNING_THREADS.pop(camera_id, None)
 
     for cam in _CAMERAS_REGISTRY:
         if cam["camera_id"] == camera_id:
@@ -603,62 +711,141 @@ def run_analysis(request: RunAnalysisRequest):
     """
     Starts real 9-stage intelligence analysis on an uploaded or specified MP4 video file.
     Safely stops and cleans up any prior analysis session to prevent multiple workers.
+    Returns immediately with session identifier and STARTING state.
     """
     cam_id = request.camera_id.strip()
     raw_path = request.video_file_path.strip()
 
-    from pathlib import Path
     from ...config import settings
-    resolved_path = Path(raw_path)
-    if not resolved_path.exists():
-        repo_root = Path(__file__).resolve().parent.parent.parent.parent
-        if (repo_root / raw_path).exists():
-            resolved_path = repo_root / raw_path
-        elif (settings.storage_path / "uploads" / raw_path).exists():
-            resolved_path = settings.storage_path / "uploads" / raw_path
-        elif (settings.samples_path / raw_path).exists():
-            resolved_path = settings.samples_path / raw_path
+    # 1. Path Resolution across server locations
+    resolved_path: Optional[Path] = None
+    clean_raw = raw_path.replace("\\", "/")
+    candidates = [
+        Path(raw_path),
+        Path(clean_raw),
+        settings.repo_root / clean_raw,
+        settings.storage_path / "uploads" / clean_raw,
+        settings.storage_path / "uploads" / Path(clean_raw).name,
+        settings.samples_path / clean_raw,
+        settings.samples_path / Path(clean_raw).name,
+        settings.storage_path / clean_raw,
+    ]
+    for cand in candidates:
+        if cand.exists() and cand.is_file():
+            resolved_path = cand.resolve()
+            break
+
+    if not resolved_path or not resolved_path.exists():
+        logger.error(f"Run Analysis failed: Video file not found at '{raw_path}'")
+        raise HTTPException(status_code=404, detail=f"Video file not found at '{raw_path}'")
+
+    if not os.access(resolved_path, os.R_OK):
+        logger.error(f"Run Analysis failed: Video file not readable at '{resolved_path}'")
+        raise HTTPException(status_code=400, detail=f"Video file not readable at '{resolved_path}'")
+
+    # 2. Concurrency Protection (Requirement 8)
+    existing_status = _ANALYSIS_STATUS.get(cam_id, {})
+    current_orch = _RUNNING_ORCHESTRATORS.get(cam_id)
+    is_actively_running = current_orch is not None and getattr(current_orch, "_is_running", False)
+
+    if is_actively_running:
+        curr_video = existing_status.get("video_path")
+        if curr_video and Path(curr_video).resolve() == resolved_path:
+            logger.info(f"Duplicate Run Analysis request for active session on camera '{cam_id}' ({resolved_path.name}). Returning active session.")
+            return {
+                "session_id": existing_status.get("session_id", f"ses_{cam_id}"),
+                "status": existing_status.get("status", "ANALYZING"),
+                "source": str(resolved_path),
+                "camera_id": cam_id,
+                "video_file_path": str(resolved_path),
+                "file_name": resolved_path.name,
+                "message": f"Analysis is already running for {resolved_path.name}",
+            }
         else:
-            raise HTTPException(status_code=404, detail=f"Video file not found at '{raw_path}'")
+            logger.info(f"Stopping previous analysis on '{cam_id}' before switching to new video: '{resolved_path.name}'")
+            try:
+                current_orch.stop()
+            except Exception as exc:
+                logger.warning(f"Error stopping previous orchestrator: {exc}")
+            _RUNNING_ORCHESTRATORS.pop(cam_id, None)
+            if cam_id in _RUNNING_THREADS:
+                _RUNNING_THREADS[cam_id].join(timeout=2.0)
+                _RUNNING_THREADS.pop(cam_id, None)
 
-    logger.info(f"Operator initiated analysis on '{resolved_path}' for camera '{cam_id}'")
-
-    # 1. Stop and clean up any existing analysis worker for this camera
-    if cam_id in _RUNNING_ORCHESTRATORS:
-        try:
-            _RUNNING_ORCHESTRATORS[cam_id].stop()
-        except Exception as exc:
-            logger.debug(f"Notice stopping previous orchestrator: {exc}")
-        _RUNNING_ORCHESTRATORS.pop(cam_id, None)
-        if cam_id in _RUNNING_THREADS:
-            _RUNNING_THREADS[cam_id].join(timeout=1.0)
-            _RUNNING_THREADS.pop(cam_id, None)
-
-    # 2. Launch real pipeline using existing connect_rtsp_camera
-    conn_req = ConnectCameraRequest(
-        camera_id=cam_id,
-        name="Operator Video Analysis",
-        video_file_path=str(resolved_path),
-        sector_id="SECTOR-B07",
-        sector_name="Northern Border Sector",
-        device=request.device or "cpu",
-    )
-    result = connect_rtsp_camera(conn_req)
-
+    # 3. Create Unique Session Identifier (Requirement 2)
+    session_id = f"ses_{int(time.time() * 1000)}_{cam_id}"
     _ANALYSIS_STATUS[cam_id] = {
-        "status": "ANALYZING",
-        "file_name": resolved_path.name,
+        "session_id": session_id,
+        "status": "STARTING",
+        "camera_id": cam_id,
         "video_path": str(resolved_path),
+        "file_name": resolved_path.name,
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    return {
-        "status": "ANALYZING",
+    # Ensure camera registered
+    cam_entry = {
         "camera_id": cam_id,
+        "name": "Operator Video Analysis",
+        "rtsp_url": f"FILE: {resolved_path.name}",
+        "video_file_path": str(resolved_path),
+        "sector_id": "SECTOR-B07",
+        "sector_name": "Northern Border Sector",
+        "status": "ONLINE",
+        "resolution": "1280x720",
+        "fps_target": 25.0,
+        "is_calibrated": True,
+        "location": {"lat": 28.6139, "lng": 77.2090, "elevation_m": 12.5},
+        "visible_border_sections": ["SEC-ALPHA"],
+        "connected_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    existing_idx = next((i for i, c in enumerate(_CAMERAS_REGISTRY) if c["camera_id"] == cam_id), None)
+    if existing_idx is not None:
+        _CAMERAS_REGISTRY[existing_idx] = cam_entry
+    else:
+        _CAMERAS_REGISTRY.append(cam_entry)
+
+    try:
+        existing_db_cam = camera_repo.get(cam_id)
+        if not existing_db_cam:
+            camera_repo.insert({
+                "id": cam_id,
+                "name": f"Camera {cam_id}",
+                "status": "ONLINE",
+                "is_active": True,
+            })
+    except Exception as exc:
+        logger.debug(f"Database camera sync notice: {exc}")
+
+    # 4. Spawn Asynchronous Background Worker (Requirement 2: Do not block HTTP request)
+    thread = threading.Thread(
+        target=_start_pipeline_for_camera,
+        args=(
+            cam_id,
+            str(resolved_path),
+            None,
+            request.device or "cpu",
+            session_id,
+            "SECTOR-B07",
+            "Northern Border Sector",
+        ),
+        name=f"IBVAP-Analysis-{cam_id}-{session_id}",
+        daemon=True,
+    )
+    thread.start()
+    _RUNNING_THREADS[cam_id] = thread
+
+    logger.info(f"Analysis session '{session_id}' started asynchronously for camera '{cam_id}' on '{resolved_path.name}'")
+
+    return {
+        "session_id": session_id,
+        "status": "STARTING",
+        "camera_id": cam_id,
+        "source": str(resolved_path),
         "video_file_path": str(resolved_path),
         "file_name": resolved_path.name,
         "message": f"Real analysis pipeline active on {resolved_path.name}",
-        "camera": result.get("camera"),
+        "camera": cam_entry,
     }
 
 
@@ -673,7 +860,7 @@ def stop_analysis(request: StopAnalysisRequest):
             pass
         _RUNNING_ORCHESTRATORS.pop(cam_id, None)
         if cam_id in _RUNNING_THREADS:
-            _RUNNING_THREADS[cam_id].join(timeout=1.0)
+            _RUNNING_THREADS[cam_id].join(timeout=2.0)
             _RUNNING_THREADS.pop(cam_id, None)
 
     _ANALYSIS_STATUS[cam_id] = {
@@ -687,18 +874,26 @@ def stop_analysis(request: StopAnalysisRequest):
 @router.get("/{camera_id}/analysis-status", response_model=Dict[str, Any])
 def get_analysis_status(camera_id: str):
     """Returns the real-time operational status of the video analysis session."""
-    is_running = camera_id in _RUNNING_ORCHESTRATORS and getattr(_RUNNING_ORCHESTRATORS[camera_id], "_is_running", False)
     st = _ANALYSIS_STATUS.get(camera_id, {})
-    current_status = st.get("status", "ANALYZING" if is_running else "READY")
-    if is_running:
+    current_orch = _RUNNING_ORCHESTRATORS.get(camera_id)
+    is_running = current_orch is not None and getattr(current_orch, "_is_running", False)
+
+    current_status = st.get("status")
+    if not current_status:
+        current_status = "ANALYZING" if is_running else "READY"
+    elif is_running and current_status not in ("EVENT_DETECTED", "STARTING"):
         current_status = "ANALYZING"
 
     return {
         "camera_id": camera_id,
         "status": current_status,
+        "session_id": st.get("session_id"),
         "file_name": st.get("file_name"),
         "video_path": st.get("video_path"),
         "is_running": is_running,
+        "started_at": st.get("started_at"),
+        "completed_at": st.get("completed_at"),
+        "error": st.get("error"),
     }
 
 
@@ -721,27 +916,24 @@ def start_demo_pipeline_if_configured():
     video_path_str = getattr(settings, "DEMO_VIDEO_PATH", "storage/samples/test_video.mp4")
     video_path = Path(video_path_str)
     if not video_path.is_absolute():
-        repo_root = Path(__file__).resolve().parent.parent.parent.parent
+        repo_root = settings.repo_root
         video_path = repo_root / video_path_str
 
     if not video_path.exists():
         logger.warning(
             f"Demo video file '{video_path_str}' not found on disk at '{video_path}'. "
-            "Skipping automatic pipeline startup. Connect manually via UI or POST /api/v1/cameras/connect."
+            "Skipping automatic pipeline startup. Connect manually via UI or POST /api/v1/cameras/run-analysis."
         )
         return
 
     logger.info(f"Auto-starting production demo pipeline for camera '{cam_id}' with video '{video_path}'...")
-    req = ConnectCameraRequest(
+    req = RunAnalysisRequest(
         camera_id=cam_id,
-        name="SIH Recorded Breach Demo",
         video_file_path=str(video_path),
-        sector_id="SECTOR-B07",
-        sector_name="Northern Border Sector",
         device=getattr(settings, "DEFAULT_DEVICE", "cpu"),
     )
     try:
-        connect_rtsp_camera(req)
+        run_analysis(req)
         logger.info(f"Production demo pipeline for camera '{cam_id}' started successfully.")
     except Exception as exc:
         logger.error(f"Failed to auto-start demo camera pipeline: {exc}")

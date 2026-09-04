@@ -28,17 +28,24 @@ async def lifespan(app: FastAPI):
     settings.ensure_storage_directories()
 
     if settings.is_supabase_configured:
-        db_status, msg = await check_database_health()
-        logger.info(f"Initial Supabase DB check: status={db_status} msg={msg or 'ok'}")
+        try:
+            db_status, msg = await asyncio.wait_for(check_database_health(), timeout=3.0)
+            logger.info(f"Initial Supabase DB check: status={db_status} msg={msg or 'ok'}")
+        except Exception as exc:
+            logger.warning(f"Initial Supabase DB check timed out or failed: {exc}")
     else:
         logger.warning("Supabase credentials not set in environment. Running in unconfigured local mode.")
 
-    # Start single demo pipeline if configured (guarantees exactly 1 pipeline)
+    # Start demo pipeline asynchronously so Uvicorn immediately binds to PORT and passes health checks
     from .api.routes.cameras import start_demo_pipeline_if_configured, stop_all_pipelines
-    try:
-        start_demo_pipeline_if_configured()
-    except Exception as exc:
-        logger.error(f"Error during demo pipeline auto-start: {exc}")
+    if getattr(settings, "AUTO_START_DEMO_PIPELINE", False):
+        import threading
+        def _async_start():
+            try:
+                start_demo_pipeline_if_configured()
+            except Exception as exc:
+                logger.error(f"Error during demo pipeline auto-start: {exc}")
+        threading.Thread(target=_async_start, daemon=True, name="DemoPipelineAutoStart").start()
 
     yield
 

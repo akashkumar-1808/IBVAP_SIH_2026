@@ -221,7 +221,8 @@ export async function stopAnalysis(cameraId: string): Promise<any> {
 
 export async function fetchAnalysisStatus(cameraId: string): Promise<{
   camera_id: string;
-  status: 'READY' | 'UPLOADING' | 'READY TO ANALYZE' | 'ANALYZING' | 'COMPLETED' | 'ERROR';
+  status: 'IDLE' | 'READY' | 'UPLOADING' | 'READY TO ANALYZE' | 'STARTING' | 'ANALYZING' | 'EVENT_DETECTED' | 'COMPLETED' | 'ERROR';
+  session_id?: string;
   file_name?: string;
   video_path?: string;
   is_running: boolean;

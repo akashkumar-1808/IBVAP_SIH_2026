@@ -2,8 +2,8 @@ services:
   - type: web
     name: ibvap-console
     runtime: python
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
-    startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && pip uninstall -y opencv-python && pip install --force-reinstall opencv-python-headless"
+    startCommand: "python start.py"
     healthCheckPath: "/health?check_db=false"
     envVars:
       - key: ENVIRONMENT
@@ -13,7 +13,7 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: AUTO_START_DEMO_PIPELINE
-        value: "true"
+        value: "false"
       - key: DEMO_VIDEO_PATH
         value: storage/samples/test_video.mp4
       - key: DEFAULT_CAMERA_ID
@@ -23,14 +23,10 @@ services:
       - key: YOLO_MODEL_PATH
         value: models/detector/yolov8n.pt
       - key: STORAGE_ROOT
-        value: /opt/render/project/src/storage
+        value: storage
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-    disk:
-      name: ibvap-storage
-      mountPath: /opt/render/project/src/storage
-      sizeGB: 10

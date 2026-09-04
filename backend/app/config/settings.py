@@ -68,9 +68,17 @@ class Settings(BaseSettings):
         return None
 
     @property
+    def repo_root(self):
+        from pathlib import Path
+        return Path(__file__).resolve().parent.parent.parent.parent
+
+    @property
     def storage_path(self):
         from pathlib import Path
-        return Path(self.STORAGE_ROOT).resolve()
+        p = Path(self.STORAGE_ROOT)
+        if not p.is_absolute():
+            p = self.repo_root / p
+        return p.resolve()
 
     @property
     def evidence_path(self):

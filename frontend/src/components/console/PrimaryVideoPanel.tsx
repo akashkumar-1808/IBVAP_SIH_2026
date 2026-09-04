@@ -29,7 +29,7 @@ interface PrimaryVideoPanelProps {
   onOpenAddCamera: () => void;
 }
 
-type SourceStatus = 'READY' | 'UPLOADING' | 'READY TO ANALYZE' | 'ANALYZING' | 'COMPLETED' | 'ERROR';
+type SourceStatus = 'IDLE' | 'READY' | 'UPLOADING' | 'READY TO ANALYZE' | 'STARTING' | 'ANALYZING' | 'EVENT_DETECTED' | 'COMPLETED' | 'ERROR';
 
 export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   cameraId,
@@ -78,12 +78,9 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   }, [checkStatus]);
 
   useEffect(() => {
-    if (cameraId) {
-      setStreamSrc(getStreamUrl(cameraId));
-      setStreamError(false);
-    } else {
-      setStreamSrc('');
-    }
+    const targetCam = cameraId || 'DEMO-CAM-01';
+    setStreamSrc(getStreamUrl(targetCam));
+    setStreamError(false);
   }, [cameraId]);
 
   useEffect(() => {
@@ -139,14 +136,17 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   const handleRunAnalysis = async (targetVideoPath?: string) => {
     const pathToRun = targetVideoPath || selectedFilePath || 'storage/samples/test_video.mp4';
     setIsActionBusy(true);
+    setAnalysisStatus('STARTING');
+    setStatusMessage('Starting 9-stage AI analysis pipeline...');
     try {
-      await runAnalysis({
+      const res = await runAnalysis({
         camera_id: camId,
         video_file_path: pathToRun,
         device: 'cpu',
       });
-      setAnalysisStatus('ANALYZING');
-      setStatusMessage(`Real AI pipeline running on ${selectedFileName || 'test_video.mp4'}`);
+      const nextStatus = (res.status as SourceStatus) || 'ANALYZING';
+      setAnalysisStatus(nextStatus);
+      setStatusMessage(`Real AI pipeline active on ${selectedFileName || res.file_name || 'test_video.mp4'}`);
       // Re-trigger live stream with timestamp cache buster
       setStreamSrc(`${getStreamUrl(camId)}?t=${Date.now()}`);
       setStreamError(false);
@@ -313,7 +313,7 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
             <span>Upload MP4</span>
           </button>
 
-          {analysisStatus === 'ANALYZING' ? (
+          {analysisStatus === 'ANALYZING' || analysisStatus === 'EVENT_DETECTED' || analysisStatus === 'STARTING' ? (
             <button
               className="btn-neutral-outline"
               style={{ padding: '3px 8px', fontSize: '10px', borderColor: 'var(--color-red)', color: 'var(--color-red)' }}

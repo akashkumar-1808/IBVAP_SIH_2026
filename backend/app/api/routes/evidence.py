@@ -41,7 +41,7 @@ def _resolve_evidence_path(storage_ref: str, rec: Optional[Dict[str, Any]] = Non
     p = Path(os.path.normpath(storage_ref))
     if p.exists():
         return p
-    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    repo_root = settings.repo_root
     p_repo = repo_root / os.path.normpath(storage_ref)
     if p_repo.exists():
         return p_repo

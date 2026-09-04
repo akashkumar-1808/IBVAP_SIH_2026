@@ -64,13 +64,21 @@ def test_full_upload_and_evidence_lifecycle():
     )
     assert run_resp.status_code == 200, f"Run analysis failed: {run_resp.text}"
     run_data = run_resp.json()
-    print(f"Run Response: {run_data['message']}")
-    assert run_data["status"] == "ANALYZING"
+    print(f"Run Response: {run_data['message']} | Session ID: {run_data.get('session_id')}")
+    assert run_data["status"] in ("STARTING", "ANALYZING")
 
-    # Verify status is ANALYZING
-    status_resp = client.get(f"/api/v1/cameras/{cam_id}/analysis-status")
-    assert status_resp.status_code == 200
-    assert status_resp.json()["status"] == "ANALYZING"
+    # Verify status transitions to ANALYZING
+    status_data = None
+    for _ in range(40):
+        status_resp = client.get(f"/api/v1/cameras/{cam_id}/analysis-status")
+        assert status_resp.status_code == 200
+        status_data = status_resp.json()
+        if status_data["status"] in ("ANALYZING", "EVENT_DETECTED"):
+            break
+        time.sleep(0.5)
+
+    print(f"Current Analysis Status: {status_data['status']}")
+    assert status_data["status"] in ("ANALYZING", "EVENT_DETECTED")
 
     print("\n" + "=" * 70)
     print("STEP 4: Allowing Real AI Pipeline to Process Video & Detect Intrusion...")
@@ -81,7 +89,7 @@ def test_full_upload_and_evidence_lifecycle():
 
     detected_event = None
     t0 = time.time()
-    while time.time() - t0 < 35.0:
+    while time.time() - t0 < 70.0:
         events_resp = client.get(f"/api/v1/events?camera_id={cam_id}")
         if events_resp.status_code == 200:
             ev_list = events_resp.json()
@@ -93,7 +101,7 @@ def test_full_upload_and_evidence_lifecycle():
                 break
         time.sleep(1.0)
 
-    assert detected_event is not None, "Pipeline did not detect real HIGH/CRITICAL intrusion event within 35s!"
+    assert detected_event is not None, "Pipeline did not detect real HIGH/CRITICAL intrusion event within 70s!"
     event_id = detected_event["id"]
 
     print("\n" + "=" * 70)

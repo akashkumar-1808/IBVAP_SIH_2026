@@ -194,7 +194,7 @@ class LivePipelineOrchestrator:
             self.source = FileVideoSource(
                 camera_id=self.config.camera_id,
                 file_path=self.config.file_path,
-                loop=True,
+                loop=self.config.loop_video,
                 realtime_pacing=True,
             )
         else:
@@ -274,9 +274,22 @@ class LivePipelineOrchestrator:
         except KeyboardInterrupt:
             print("\nReceived SIGINT (Ctrl+C). Stopping live pipeline gracefully...")
         finally:
+            self._post_process_run()
             self.stop()
 
         return self.metrics
+
+    def _post_process_run(self) -> None:
+        """Completes pending evidence generation and finalizes post-run tasks at EOF."""
+        try:
+            logger.info(f"Finalizing pipeline run {self.run_id} for camera '{self.config.camera_id}'...")
+            if hasattr(self, "_evidence_threads") and self._evidence_threads:
+                for th in self._evidence_threads:
+                    if th.is_alive():
+                        th.join(timeout=3.0)
+            time.sleep(0.5)
+        except Exception as exc:
+            logger.warning(f"Error during post-run processing: {exc}")
 
     def _process_single_frame(self, packet: FramePacket) -> None:
         """Executes the complete 9-stage intelligence chain for one frame."""
@@ -347,8 +360,9 @@ class LivePipelineOrchestrator:
         t0 = time.perf_counter()
         for ev in events:
             if ev.priority in (EventPriority.HIGH, EventPriority.CRITICAL):
-                # Log event created banner once per active transition
-                if ev.duration_seconds <= 0.1:
+                if not any(e.id == ev.id for e in self._recorded_events):
+                    self._recorded_events.append(ev)
+                    self.metrics.total_events_generated += 1
                     self._print_event_banner(ev, tracks, spatial_states, behaviors)
                     matching_tr = next((t for t in tracks if t.track_id == ev.track_id), None)
                     matching_sp = next((s for s in spatial_states if s.track_id == ev.track_id), None)
@@ -372,15 +386,15 @@ class LivePipelineOrchestrator:
                             except Exception as ex:
                                 logger.error(f"Async evidence packaging error: {ex}")
 
-                        threading.Thread(
+                        pkg_thread = threading.Thread(
                             target=_async_package,
                             args=(ev, matching_tr, matching_sp, frame_snapshot, active_borders),
                             daemon=True,
-                        ).start()
-
-                if not any(e.id == ev.id for e in self._recorded_events):
-                    self._recorded_events.append(ev)
-                    self.metrics.total_events_generated += 1
+                        )
+                        pkg_thread.start()
+                        if not hasattr(self, "_evidence_threads"):
+                            self._evidence_threads = []
+                        self._evidence_threads.append(pkg_thread)
         self._stage_latencies_history["evidence"].append((time.perf_counter() - t0) * 1000.0)
 
         # Stage 8: Visualization Rendering & OpenCV Display
@@ -512,11 +526,19 @@ class LivePipelineOrchestrator:
         """Safely shuts down sources, resources, and generates the run report."""
         was_running = self._is_running
         self._is_running = False
+        self._shutdown_requested = True
         self.metrics.stopped_at_utc = datetime.now(timezone.utc)
 
         # 1. Close Video Source
         if self.source:
-            self.source.stop()
+            try:
+                self.source.close()
+            except Exception:
+                pass
+            try:
+                self.source.stop()
+            except Exception:
+                pass
             self.source = None
 
         if not was_running:

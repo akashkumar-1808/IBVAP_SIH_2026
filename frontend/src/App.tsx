@@ -31,7 +31,7 @@ import { TelemetryWebSocket } from './services/websocket';
 
 export const App: React.FC = () => {
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('DEMO-CAM-01');
   const [, setCalibration] = useState<CameraCalibration | null>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null);

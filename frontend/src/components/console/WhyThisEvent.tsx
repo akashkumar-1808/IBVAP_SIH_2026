@@ -5,9 +5,10 @@ import { EventRecord } from '../../types';
 interface WhyThisEventProps {
   event?: EventRecord | null;
   onAcknowledge?: (eventId: string) => void;
+  onInspectEvidence?: (event: EventRecord) => void;
 }
 
-export const WhyThisEvent: React.FC<WhyThisEventProps> = ({ event }) => {
+export const WhyThisEvent: React.FC<WhyThisEventProps> = ({ event, onInspectEvidence }) => {
   if (!event) {
     return (
       <div className="ops-panel">
@@ -28,8 +29,29 @@ export const WhyThisEvent: React.FC<WhyThisEventProps> = ({ event }) => {
   return (
     <div className="ops-panel">
       {/* Title */}
-      <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--color-border-subtle)', paddingBottom: '6px' }}>
-        WHY THIS EVENT?
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border-subtle)', paddingBottom: '6px' }}>
+        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          WHY THIS EVENT?
+        </span>
+        {onInspectEvidence && (
+          <button
+            onClick={() => onInspectEvidence(event)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#38BDF8',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+            }}
+            title="Inspect full forensic evidence dossier and video footages"
+          >
+            Inspect Evidence →
+          </button>
+        )}
       </div>
 
       {/* 2-Column Checklist of FusionEngine Reason Codes */}

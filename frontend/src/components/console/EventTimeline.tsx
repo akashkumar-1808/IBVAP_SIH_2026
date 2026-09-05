@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { ChevronDown, ListFilter, LayoutGrid } from 'lucide-react';
+import { ChevronDown, ListFilter, LayoutGrid, Search } from 'lucide-react';
 import { EventRecord } from '../../types';
 
 interface EventTimelineProps {
   events: EventRecord[];
   selectedEvent?: EventRecord | null;
   onSelectEvent: (event: EventRecord) => void;
+  onInspectEvidence?: (event: EventRecord) => void;
 }
 
 export const EventTimeline: React.FC<EventTimelineProps> = ({
   events,
   selectedEvent,
   onSelectEvent,
+  onInspectEvidence,
 }) => {
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
 
@@ -81,6 +83,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
                 <th>PRIORITY</th>
                 <th>RISK SCORE</th>
                 <th>STATUS</th>
+                <th style={{ textAlign: 'center' }}>ACTION</th>
               </tr>
             </thead>
             <tbody>
@@ -96,6 +99,8 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
                     key={ev.id}
                     className={isSelected ? 'selected' : ''}
                     onClick={() => onSelectEvent(ev)}
+                    onDoubleClick={() => onInspectEvidence?.(ev)}
+                    style={{ cursor: 'pointer' }}
                   >
                     <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{timeOnly}</td>
                     <td style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
@@ -130,6 +135,33 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({
                       >
                         {ev.status || 'ACTIVE'}
                       </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectEvent(ev);
+                          onInspectEvidence?.(ev);
+                        }}
+                        style={{
+                          backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                          border: '1px solid rgba(56, 189, 248, 0.4)',
+                          color: '#38BDF8',
+                          padding: '3px 8px',
+                          borderRadius: '3px',
+                          fontSize: '9.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title="Inspect forensic evidence and timeline"
+                      >
+                        <Search size={10} />
+                        Inspect
+                      </button>
                     </td>
                   </tr>
                 );

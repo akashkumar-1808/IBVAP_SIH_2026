@@ -15,11 +15,11 @@ if str(PROJECT_ROOT) not in sys.path:
 import uvicorn
 
 if __name__ == "__main__":
-    raw_port = os.environ.get("PORT", "8000")
+    raw_port = os.environ.get("PORT", "7860")
     try:
         port = int(raw_port)
     except (ValueError, TypeError):
-        port = 8000
+        port = 7860
 
     host = os.environ.get("HOST", "0.0.0.0")
     print(f"[IBVAP Production Entrypoint] Launching application on {host}:{port}")

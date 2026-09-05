@@ -12,6 +12,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
+from ...config import settings
 from ...db.repositories import EvidenceRepository
 from ...db.storage import evidence_storage
 from ...schemas.evidence import (
@@ -41,7 +42,7 @@ def _resolve_evidence_path(storage_ref: str, rec: Optional[Dict[str, Any]] = Non
     p = Path(os.path.normpath(storage_ref))
     if p.exists():
         return p
-    repo_root = settings.repo_root
+    repo_root = getattr(settings, "repo_root", Path("."))
     p_repo = repo_root / os.path.normpath(storage_ref)
     if p_repo.exists():
         return p_repo
@@ -49,9 +50,13 @@ def _resolve_evidence_path(storage_ref: str, rec: Optional[Dict[str, Any]] = Non
         cam_id = rec.get("camera_id", "")
         evt_id = rec.get("event_id", "")
         file_name = os.path.basename(storage_ref)
-        p_alt = settings.evidence_path / cam_id / evt_id / file_name
-        if p_alt.exists():
-            return p_alt
+        if hasattr(settings, "evidence_path"):
+            p_alt = settings.evidence_path / cam_id / evt_id / file_name
+            if p_alt.exists():
+                return p_alt
+        p_storage = Path("storage") / "evidence" / cam_id / evt_id / file_name
+        if p_storage.exists():
+            return p_storage
     return None
 
 
@@ -141,13 +146,22 @@ def get_evidence_file(evidence_id: str):
     from fastapi.responses import FileResponse
 
     rec = evidence_repo.get_by_id(evidence_id)
-    if not rec:
-        raise HTTPException(status_code=404, detail=f"Evidence record '{evidence_id}' not found.")
-
-    storage_ref = rec.get("storage_reference", "")
-    resolved_path = _resolve_evidence_path(storage_ref, rec)
+    resolved_path = None
+    if rec:
+        storage_ref = rec.get("storage_reference", "")
+        resolved_path = _resolve_evidence_path(storage_ref, rec)
+    
     if not resolved_path or not resolved_path.exists():
-        raise HTTPException(status_code=404, detail=f"Evidence file not found on disk at '{storage_ref}'.")
+        # Fallback: search disk directly for matching event folder and artifact
+        ev_root = Path("storage/evidence")
+        if ev_root.exists():
+            for f in ev_root.rglob("*"):
+                if f.is_file() and (f.name in evidence_id or (f.parent.name in evidence_id and f.stem in evidence_id)):
+                    resolved_path = f
+                    break
+
+    if not resolved_path or not resolved_path.exists():
+        raise HTTPException(status_code=404, detail=f"Evidence file not found for '{evidence_id}'.")
 
     ext = resolved_path.suffix.lower()
     media_types = {

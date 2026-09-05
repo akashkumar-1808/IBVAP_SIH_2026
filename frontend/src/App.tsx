@@ -9,6 +9,7 @@ import { EventTimeline } from './components/console/EventTimeline';
 import { WhyThisEvent } from './components/console/WhyThisEvent';
 import { EvidencePackagePreview } from './components/console/EvidencePackagePreview';
 import { AddCameraModal } from './components/console/AddCameraModal';
+import { ForensicEvidenceModal } from './components/console/ForensicEvidenceModal';
 
 import {
   CameraInfo,
@@ -37,6 +38,8 @@ export const App: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null);
   const [evidencePackage, setEvidencePackage] = useState<EvidencePackage | null>(null);
   const [isAddCameraModalOpen, setIsAddCameraModalOpen] = useState<boolean>(false);
+  const [inspectedEvent, setInspectedEvent] = useState<EventRecord | null>(null);
+  const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState<boolean>(false);
 
   // Deduplication ref for active event selection
   const lastAlertedEventIdRef = useRef<string | null>(null);
@@ -138,6 +141,15 @@ export const App: React.FC = () => {
     setSelectedEvent(ev);
   };
 
+  const handleInspectEvidence = (ev?: EventRecord | null) => {
+    const target = ev || selectedEvent || activeAlertEvent;
+    if (target) {
+      setInspectedEvent(target);
+      setSelectedEvent(target);
+      setIsEvidenceModalOpen(true);
+    }
+  };
+
   // 5. Handle Camera Connection Callback
   const handleCameraConnected = (newCamera: CameraInfo) => {
     setCameras((prev) => {
@@ -231,6 +243,7 @@ export const App: React.FC = () => {
                 event={activeAlertEvent}
                 onSelectEvent={handleSelectEvent}
                 onAcknowledge={handleAcknowledge}
+                onInspectEvidence={handleInspectEvidence}
               />
 
               <IntelligenceCards
@@ -250,16 +263,19 @@ export const App: React.FC = () => {
               events={events}
               selectedEvent={selectedEvent}
               onSelectEvent={handleSelectEvent}
+              onInspectEvidence={handleInspectEvidence}
             />
 
             <WhyThisEvent
               event={selectedEvent}
               onAcknowledge={handleAcknowledge}
+              onInspectEvidence={handleInspectEvidence}
             />
 
             <EvidencePackagePreview
               evidencePackage={evidencePackage}
               event={selectedEvent}
+              onInspectEvidence={handleInspectEvidence}
             />
           </div>
         </section>
@@ -273,6 +289,15 @@ export const App: React.FC = () => {
         isOpen={isAddCameraModalOpen}
         onClose={() => setIsAddCameraModalOpen(false)}
         onCameraConnected={handleCameraConnected}
+      />
+
+      {/* Full Forensic Evidence Dossier & Footages Modal */}
+      <ForensicEvidenceModal
+        isOpen={isEvidenceModalOpen}
+        onClose={() => setIsEvidenceModalOpen(false)}
+        event={inspectedEvent}
+        evidencePackage={inspectedEvent?.id === evidencePackage?.event_id ? evidencePackage : null}
+        onAcknowledge={handleAcknowledge}
       />
     </div>
   );

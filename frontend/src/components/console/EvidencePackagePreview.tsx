@@ -6,11 +6,13 @@ import { getEvidenceFileUrl, verifyEvidenceIntegrity } from '../../services/api'
 interface EvidencePackagePreviewProps {
   evidencePackage?: EvidencePackage | null;
   event?: EventRecord | null;
+  onInspectEvidence?: (event?: EventRecord | null) => void;
 }
 
 export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
   evidencePackage,
   event,
+  onInspectEvidence,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
@@ -57,7 +59,11 @@ export const EvidencePackagePreview: React.FC<EvidencePackagePreviewProps> = ({
   };
 
   const openPreview = (_recId?: string) => {
-    setIsModalOpen(true);
+    if (onInspectEvidence) {
+      onInspectEvidence(event);
+    } else {
+      setIsModalOpen(true);
+    }
   };
 
   return (

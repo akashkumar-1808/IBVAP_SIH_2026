@@ -24,20 +24,83 @@ import urllib.request
 import json
 from pathlib import Path
 
+import socket
+import subprocess
+import platform
+
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    """Checks whether a port is currently in use."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex((host, port)) == 0
+
+
+def check_ibvap_health(host: str, port: int) -> bool:
+    """Verifies if an active server at host:port is genuinely an IBVAP backend."""
+    try:
+        url = f"http://{host}:{port}/health"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                return "IBVAP" in data.get("app_name", "")
+    except Exception:
+        pass
+    return False
+
+
+def free_port(port: int) -> bool:
+    """Attempts to kill lingering processes holding the target port on Windows/Linux."""
+    if platform.system() == "Windows":
+        try:
+            cmd = f'netstat -ano | findstr :{port}'
+            out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode(errors="ignore")
+            killed = False
+            for line in out.strip().splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 5 and f":{port}" in parts[1] and parts[3] == "LISTENING":
+                    pid = parts[4]
+                    if pid and pid != "0":
+                        subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True)
+                        killed = True
+            if killed:
+                time.sleep(1.0)
+            return not is_port_in_use(port)
+        except Exception:
+            return False
+    else:
+        try:
+            subprocess.run(f"fuser -k {port}/tcp", shell=True, capture_output=True)
+            time.sleep(1.0)
+            return not is_port_in_use(port)
+        except Exception:
+            return False
+
+
+def find_available_port(start_port: int, host: str = "127.0.0.1") -> int:
+    """Finds the next unused TCP port starting from start_port."""
+    port = start_port
+    while is_port_in_use(port, host):
+        port += 1
+    return port
+
+
 def wait_for_server(url: str, timeout_sec: float = 20.0) -> bool:
-    """Polls backend health endpoint until online."""
+    """Polls backend health endpoint until online AND verified as IBVAP-Backend."""
     start = time.time()
     while time.time() - start < timeout_sec:
         try:
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=1.5) as resp:
                 if resp.status == 200:
-                    return True
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if "IBVAP" in data.get("app_name", ""):
+                        return True
         except Exception:
             pass
         time.sleep(0.5)
@@ -91,40 +154,60 @@ def main():
         print("Please provide a valid MP4 file with --video <path>.\n")
         sys.exit(1)
 
+    target_port = args.port
+
+    # 2. Port collision detection and auto-recovery
+    server = None
+    if is_port_in_use(target_port, args.host):
+        if check_ibvap_health(args.host, target_port):
+            print(f"[INFO] An active IBVAP Backend is already running on http://{args.host}:{target_port}.")
+            print(f"[INFO] Reusing existing server instance.")
+        else:
+            print(f"[WARN] Port {target_port} is already in use by another process.")
+            print(f"Attempting to free port {target_port}...")
+            if free_port(target_port):
+                print(f"[OK] Successfully freed port {target_port}.")
+            else:
+                target_port = find_available_port(target_port + 1, args.host)
+                print(f"[WARN] Port {args.port} could not be freed. Switched to free port {target_port}.")
+
     print("=" * 75)
     print("      IBVAP — REAL MP4 END-TO-END SIH DEMO RUNNER")
     print("=" * 75)
     print(f"Input MP4 Video:      {video_path}")
-    print(f"Server Address:       http://{args.host}:{args.port}")
-    print(f"Operator Console:     http://localhost:{args.port}/console")
+    print(f"Server Address:       http://{args.host}:{target_port}")
+    print(f"Operator Console:     http://localhost:{target_port}/console")
     print(f"Inference Device:     {args.device.upper()}")
     print("=" * 75)
 
-    # 2. Start Uvicorn Server in Background Thread
-    import uvicorn
-    from backend.app.main import app
+    # 3. Start Uvicorn Server in Background Thread if not already online
+    if not check_ibvap_health(args.host, target_port):
+        import uvicorn
+        from backend.app.main import app
 
-    config = uvicorn.Config(
-        app=app,
-        host=args.host,
-        port=args.port,
-        log_level="warning",
-        access_log=False,
-    )
-    server = uvicorn.Server(config)
-    server_thread = threading.Thread(target=server.run, name="Uvicorn-Server", daemon=True)
-    server_thread.start()
+        config = uvicorn.Config(
+            app=app,
+            host=args.host,
+            port=target_port,
+            log_level="warning",
+            access_log=False,
+        )
+        server = uvicorn.Server(config)
+        server_thread = threading.Thread(target=server.run, name="Uvicorn-Server", daemon=True)
+        server_thread.start()
 
-    # 3. Wait for Server to be Healthy
-    health_url = f"http://{args.host}:{args.port}/health"
-    print("\nStarting backend server...")
-    if not wait_for_server(health_url, timeout_sec=25.0):
-        print(f"[FATAL] Backend server failed to start on http://{args.host}:{args.port}")
-        sys.exit(1)
-    print("[OK] Backend server is online.")
+        # Wait for Server to be Healthy
+        health_url = f"http://{args.host}:{target_port}/health"
+        print("\nStarting backend server...")
+        if not wait_for_server(health_url, timeout_sec=25.0):
+            print(f"[FATAL] Backend server failed to start on http://{args.host}:{target_port}")
+            sys.exit(1)
+        print("[OK] Backend server is online.")
+    else:
+        print(f"[OK] Backend server is online on http://{args.host}:{target_port}.")
 
     # 4. Connect Camera with the MP4 Video File
-    connect_url = f"http://{args.host}:{args.port}/api/v1/cameras/connect"
+    connect_url = f"http://{args.host}:{target_port}/api/v1/cameras/connect"
     payload = json.dumps({
         "camera_id": "DEMO-CAM-01",
         "name": "SIH Recorded Breach Demo",
@@ -147,11 +230,12 @@ def main():
             print(f"[OK] Camera connected: {conn_res.get('message')}")
     except Exception as exc:
         print(f"[FATAL] Failed to connect camera: {exc}")
-        server.should_exit = True
+        if server:
+            server.should_exit = True
         sys.exit(1)
 
     # 5. Open Web Browser to Operator Console
-    console_url = f"http://localhost:{args.port}/console"
+    console_url = f"http://localhost:{target_port}/console"
     if not args.no_browser:
         print(f"\nOpening Operator Console in your browser: {console_url}")
         time.sleep(1.0)
@@ -166,9 +250,14 @@ def main():
     print("=" * 75 + "\n")
 
     # 6. Keep-Alive and Clean Shutdown Loop
+    running = True
+
     def _sig_handler(sig, frame):
+        nonlocal running
         print("\n\nShutting down IBVAP Demo...")
-        server.should_exit = True
+        running = False
+        if server:
+            server.should_exit = True
         time.sleep(0.5)
         sys.exit(0)
 
@@ -176,12 +265,13 @@ def main():
     signal.signal(signal.SIGTERM, _sig_handler)
 
     try:
-        while not server.should_exit:
+        while running and (server is None or not server.should_exit):
             time.sleep(0.5)
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
-        server.should_exit = True
+        if server:
+            server.should_exit = True
         print("Demo stopped.")
 
 

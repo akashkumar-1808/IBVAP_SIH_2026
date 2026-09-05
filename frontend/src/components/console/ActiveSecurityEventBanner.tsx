@@ -6,12 +6,14 @@ interface ActiveSecurityEventBannerProps {
   event?: EventRecord | null;
   onSelectEvent: (event: EventRecord) => void;
   onAcknowledge: (eventId: string) => void;
+  onInspectEvidence?: (event: EventRecord) => void;
 }
 
 export const ActiveSecurityEventBanner: React.FC<ActiveSecurityEventBannerProps> = ({
   event,
   onSelectEvent,
   onAcknowledge,
+  onInspectEvidence,
 }) => {
   if (!event) {
     return (
@@ -119,7 +121,10 @@ export const ActiveSecurityEventBanner: React.FC<ActiveSecurityEventBannerProps>
           <button
             className="btn-alert-solid"
             style={{ backgroundColor: isMedium ? 'var(--color-amber)' : 'var(--color-red)', borderColor: isMedium ? 'var(--color-amber)' : 'var(--color-red)' }}
-            onClick={() => onSelectEvent(event)}
+            onClick={() => {
+              onSelectEvent(event);
+              if (onInspectEvidence) onInspectEvidence(event);
+            }}
             title="Inspect forensic evidence package"
           >
             Inspect Evidence

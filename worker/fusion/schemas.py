@@ -28,6 +28,11 @@ class EventType(str, Enum):
     RESTRICTED_OCCUPANCY = "restricted_occupancy"
     FENCE_BREACH = "fence_breach"
     OBJECT_OBSERVED = "object_observed"
+    # Operational Stream Health & Continuity Events
+    STREAM_INTERRUPTION = "stream_interruption"
+    STREAM_RECOVERED = "stream_recovered"
+    CAMERA_STALE = "camera_stale"
+    CAMERA_OFFLINE = "camera_offline"
 
 
 class EventStatus(str, Enum):
@@ -75,6 +80,12 @@ class FusionReasonCode(str, Enum):
     SPATIAL_CALIBRATION_INVALID = "spatial_calibration_invalid"
     GROUND_POINT_UNCERTAIN = "ground_point_uncertain"
     EVIDENCE_CONFLICT = "evidence_conflict"
+
+    # Stream Continuity & Trust Evidence
+    STREAM_QUALITY_DEGRADED = "stream_quality_degraded"
+    STREAM_INTERRUPTION_RECENT = "stream_interruption_recent"
+    TRACK_RECOVERED_AFTER_GAP = "track_recovered_after_gap"
+    TRACK_CONTINUITY_UNCERTAIN = "track_continuity_uncertain"
 
     # Multi-Camera & Sector Intelligence (DEC-0009)
     CROSS_CAMERA_CORROBORATED = "cross_camera_corroborated"

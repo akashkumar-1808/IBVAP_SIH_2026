@@ -200,6 +200,33 @@ export interface CameraContract {
   frame_age_ms: number;
 }
 
+export type StreamHealthState =
+  | 'HEALTHY'
+  | 'DEGRADED'
+  | 'INTERRUPTED'
+  | 'RECONNECTING'
+  | 'RECOVERED'
+  | 'STALE_FROZEN'
+  | 'OFFLINE'
+  | 'COMPLETED';
+
+export interface StreamHealthContract {
+  camera_id: string;
+  state: StreamHealthState;
+  status_reason: string;
+  capture_fps: number;
+  processing_fps: number;
+  latency_ms: number;
+  jitter_ms: number;
+  frame_age_ms: number;
+  dropped_frames_total: number;
+  trust_score: number;
+  is_frozen: boolean;
+  consecutive_healthy_frames: number;
+  last_interruption_duration: number;
+  gap_count: number;
+}
+
 export interface TelemetryPacket {
   camera_id: string;
   session_id?: string;
@@ -209,6 +236,7 @@ export interface TelemetryPacket {
   is_calibrated: boolean;
   scenario_id?: string;
   camera?: CameraContract;
+  stream_health?: StreamHealthContract;
   environment?: EnvironmentState;
   detections?: Array<{
     class: string;

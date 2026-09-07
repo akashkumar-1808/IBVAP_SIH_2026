@@ -134,6 +134,7 @@ def calculate_risk_score(
     has_cross_cam_corroboration = False
     has_sector_deviation = False
     is_corroboration_expired = False
+    stream_trust_factor = 1.0
 
     for ev in evidence_items:
         if ev.evidence_type == EvidenceType.CROSS_CAMERA_ASSOCIATION:
@@ -146,6 +147,17 @@ def calculate_risk_score(
             reason_codes.append(ev.reason_code)
             if ev.reason_code == FusionReasonCode.INSUFFICIENT_EVIDENCE_EXPIRED:
                 is_corroboration_expired = True
+        elif ev.evidence_type == EvidenceType.STREAM_CONTINUITY:
+            reason_codes.append(ev.reason_code)
+            if ev.reason_code == FusionReasonCode.STREAM_QUALITY_DEGRADED:
+                uncertainty_flags.append("STREAM_QUALITY_DEGRADED")
+                stream_trust_factor = min(stream_trust_factor, max(0.4, ev.confidence))
+            elif ev.reason_code == FusionReasonCode.STREAM_INTERRUPTION_RECENT:
+                uncertainty_flags.append("STREAM_INTERRUPTION_RECENT")
+                stream_trust_factor = min(stream_trust_factor, 0.75)
+            elif ev.reason_code == FusionReasonCode.TRACK_CONTINUITY_UNCERTAIN:
+                uncertainty_flags.append("TRACK_CONTINUITY_UNCERTAIN")
+                stream_trust_factor = min(stream_trust_factor, 0.60)
 
     # -------------------------------------------------------------
     # Transparent Weighted Fusion Formula
@@ -161,9 +173,9 @@ def calculate_risk_score(
     base_activity = (w_s * spatial_score) + (w_b * behavior_score)
     combined = (w_c * class_score * persistence_modifier) + base_activity + (w_e * environment_factor * min(1.0, base_activity + 0.2))
 
-    # Scale to [0, 100]
+    # Scale to [0, 100] and modulate with stream trust factor
     total_weights = w_c + w_s + w_b + w_e
-    normalized_score = (combined / total_weights) * 100.0
+    normalized_score = (combined / total_weights) * 100.0 * stream_trust_factor
 
     # Cross-camera handoff & multi-camera persistence boost (only when base activity is active)
     if has_cross_cam_corroboration and base_activity > 0.3:

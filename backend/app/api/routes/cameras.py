@@ -106,7 +106,7 @@ def _build_on_frame_callback(cam_id: str, rtsp_url: Optional[str], sector_id: st
     _inserted_event_ids: set = set()
     _last_update_ts: Dict[str, float] = {}
 
-    def on_frame_callback(packet, env_state, detections, tracks, spatial_states, behaviors, events, fps, vis_image=None):
+    def on_frame_callback(packet, env_state, detections, tracks, spatial_states, behaviors, events, fps, vis_image=None, stream_health=None):
         orch = _RUNNING_ORCHESTRATORS.get(cam_id)
         if not orch:
             return
@@ -360,21 +360,37 @@ def _build_on_frame_callback(cam_id: str, rtsp_url: Optional[str], sector_id: st
             "reasons": ["Human movement toward border"] if formatted_events else [],
         }
 
+        # Stream health contract (DEC-0012)
+        sh_dict = None
+        if stream_health is not None:
+            sh_dict = stream_health.to_dict() if hasattr(stream_health, "to_dict") else dict(stream_health)
+        elif orch and hasattr(orch, "continuity_manager"):
+            sh_dict = orch.continuity_manager.get_metrics().to_dict()
+
         # Camera contract metrics
         now_dt = datetime.now(timezone.utc)
         frame_age_ms = round((now_dt - packet.timestamp_utc).total_seconds() * 1000.0, 1)
-        src_health = orch.source.get_health() if orch.source else None
-        conn_status = src_health.state.value.upper() if src_health else "ONLINE"
-        src_fps = src_health.fps_measured if src_health and src_health.fps_measured > 0 else (packet.source_fps or 25.0)
-        avg_lat = orch._stage_latencies_history["total"][-1] if orch._stage_latencies_history.get("total") else 40.0
+
+        if sh_dict:
+            conn_status = sh_dict.get("state", "HEALTHY")
+            capture_fps = sh_dict.get("capture_fps", 25.0)
+            processing_fps = sh_dict.get("processing_fps", round(fps, 1))
+            avg_lat = sh_dict.get("latency_ms", 40.0)
+            frame_age_ms = sh_dict.get("frame_age_ms", max(0.0, frame_age_ms))
+        else:
+            src_health = orch.source.get_health() if (orch and orch.source) else None
+            conn_status = src_health.state.value.upper() if src_health else "ONLINE"
+            capture_fps = src_health.fps_measured if src_health and src_health.fps_measured > 0 else (packet.source_fps or 25.0)
+            processing_fps = round(fps, 1)
+            avg_lat = orch._stage_latencies_history["total"][-1] if (orch and orch._stage_latencies_history.get("total")) else 40.0
 
         camera_contract = {
             "camera_id": cam_id,
             "source_type": packet.source_type.upper() if hasattr(packet, "source_type") else ("RTSP" if rtsp_url else "FILE"),
             "connection_status": conn_status,
             "resolution": f"{packet.width}x{packet.height}" if packet.width and packet.height else "1280x720",
-            "capture_fps": round(float(src_fps), 1),
-            "processing_fps": round(fps, 1),
+            "capture_fps": round(float(capture_fps), 1),
+            "processing_fps": round(float(processing_fps), 1),
             "output_fps": round(fps, 1),
             "processing_latency_ms": round(float(avg_lat), 1),
             "frame_timestamp": packet.timestamp_utc.isoformat(),
@@ -397,6 +413,7 @@ def _build_on_frame_callback(cam_id: str, rtsp_url: Optional[str], sector_id: st
             "session_id": session_id,
             "analysis_status": _ANALYSIS_STATUS.get(cam_id, {}).get("status", "ANALYZING"),
             "camera": camera_contract,
+            "stream_health": sh_dict,
             "environment": env_contract,
             "detections": formatted_detections,
             "tracks": formatted_tracks,
@@ -602,7 +619,7 @@ def _run_analysis_background(
             "camera": {
                 "camera_id": cam_id,
                 "source_type": "FILE" if video_file_path else "RTSP",
-                "connection_status": "ONLINE",
+                "connection_status": "HEALTHY",
                 "resolution": f"{first_packet.width}x{first_packet.height}",
                 "capture_fps": 25.0,
                 "processing_fps": 25.0,
@@ -611,6 +628,7 @@ def _run_analysis_background(
                 "frame_timestamp": first_packet.timestamp_utc.isoformat(),
                 "frame_age_ms": 0.0,
             },
+            "stream_health": orchestrator.continuity_manager.get_metrics().to_dict(),
             "environment": {
                 "lighting": "DAYLIGHT",
                 "brightness": 128.0,
@@ -669,6 +687,12 @@ def _run_analysis_background(
             completed_telem["camera"]["capture_fps"] = 0.0
             completed_telem["camera"]["output_fps"] = 0.0
             completed_telem["camera"]["connection_status"] = "ONLINE"
+
+        if "stream_health" in completed_telem and isinstance(completed_telem["stream_health"], dict):
+            completed_telem["stream_health"]["state"] = "COMPLETED"
+            completed_telem["stream_health"]["status_reason"] = "Video analysis completed successfully (EOF)"
+            completed_telem["stream_health"]["capture_fps"] = 0.0
+            completed_telem["stream_health"]["processing_fps"] = 0.0
 
         _LAST_TELEMETRY[cam_id] = completed_telem.copy()
         broadcast_telemetry_sync(completed_telem)
@@ -920,6 +944,35 @@ def get_camera_calibration(camera_id: str):
         "warning_buffer_points": warn_pts,
         "reprojection_error_px": 0.42,
         "last_calibrated_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/{camera_id}/health", response_model=Dict[str, Any])
+def get_camera_health(camera_id: str):
+    """Returns real-time stream health & continuity metrics for the requested camera."""
+    orch = _RUNNING_ORCHESTRATORS.get(camera_id)
+    if orch and hasattr(orch, "continuity_manager"):
+        return orch.continuity_manager.get_metrics().to_dict()
+
+    last_telem = _LAST_TELEMETRY.get(camera_id, {})
+    if "stream_health" in last_telem and last_telem["stream_health"]:
+        return last_telem["stream_health"]
+
+    return {
+        "camera_id": camera_id,
+        "state": "OFFLINE",
+        "status_reason": "No active pipeline running for this camera",
+        "capture_fps": 0.0,
+        "processing_fps": 0.0,
+        "latency_ms": 0.0,
+        "jitter_ms": 0.0,
+        "frame_age_ms": 0.0,
+        "dropped_frames_total": 0,
+        "trust_score": 0.0,
+        "is_frozen": False,
+        "consecutive_healthy_frames": 0,
+        "last_interruption_duration": 0.0,
+        "gap_count": 0,
     }
 
 

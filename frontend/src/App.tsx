@@ -230,6 +230,7 @@ export const App: React.FC = () => {
         analysisStatus={telemetry.analysis_status}
         camera={selectedCam}
         cameraTelemetry={telemetry.camera}
+        streamHealth={telemetry.stream_health}
         environment={telemetry.environment}
         fps={telemetry.fps}
         systemHealth={wsStatus === 'CONNECTED' ? 'HEALTHY' : 'RECONNECTING'}
@@ -262,6 +263,7 @@ export const App: React.FC = () => {
               behaviors={telemetry.behavior_primitives}
               activeEvents={telemetry.active_events}
               cameraTelemetry={telemetry.camera}
+              streamHealth={telemetry.stream_health}
               analysisStatus={telemetry.analysis_status}
               onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
             />

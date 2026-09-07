@@ -251,6 +251,78 @@ LAYER 12 UI
 
 ---
 
+# 4.5 STREAM HEALTH & CONTINUITY SUBSYSTEM (PHASE 3A)
+
+A border surveillance camera operates under harsh outdoor transmission conditions, packet loss, hardware freeze, and transient network drops. To prevent false alarms, hallucinated tracks, and unhandled server shutdowns, IBVAP incorporates a dedicated **Stream Health & Continuity Subsystem** (`worker.ingestion.continuity`).
+
+```text
+       ┌───────────────────┐
+       │ Ingestion Source  │ (RTSP / Video File)
+       └─────────┬─────────┘
+                 │ Frame Arrival (raw cv2 / av)
+                 ▼
+       ┌─────────────────────────────────────────────────────────────┐
+       │             StreamContinuityManager                         │
+       │                                                             │
+       │  1. Perceptual Freshness Check (Downsampled MSE < 0.05ms)   │
+       │     → Detects frozen hardware without full-res overhead     │
+       │                                                             │
+       │  2. Deterministic 8-State Finite State Machine (FSM)        │
+       │     HEALTHY, DEGRADED, INTERRUPTED, RECONNECTING,           │
+       │     RECOVERED, STALE_FROZEN, OFFLINE, COMPLETED             │
+       │                                                             │
+       │  3. Zero-Fabrication Audit Trail                            │
+       │     → Real StreamGapRecord logging (NO synthetic frames)    │
+       │                                                             │
+       │  4. Dynamic AI Trust Score Modulation [0.0 - 1.0]          │
+       │     → Trust dampens risk scores during stream degradation   │
+       │                                                             │
+       │  5. Post-Interruption Kinematic Track Recovery              │
+       │     → Extrapolates tracks over gaps < 5.0s, recovers IDs    │
+       └─────────────────────────────┬───────────────────────────────┘
+                                     │
+                 ┌───────────────────┼───────────────────┐
+                 ▼                                       ▼
+       ┌────────────────────────┐              ┌────────────────────────┐
+       │ Live Pipeline Telemetry│              │   Downstream Fusion    │
+       │ (WebSocket + REST)     │              │ (Trust Factor & Reason)│
+       └────────────────────────┘              └────────────────────────┘
+```
+
+### 4.5.1 Canonical Stream Health States
+1. **`HEALTHY`**: Stream arriving at or above target FPS, jitter within threshold, frame diff variance > threshold, latency within budget.
+2. **`DEGRADED`**: Frame rate drops below threshold, processing latency exceeds SLA, or packet loss/jitter elevated, but stream is continuous.
+3. **`INTERRUPTED`**: No frame received for `gap_interruption_threshold_seconds` (default 2.0s); connection lost or stream stalled.
+4. **`RECONNECTING`**: Source active reconnect backoff in progress (1s, 2s, 4s, bounded to 30s).
+5. **`RECOVERED`**: Connection restored and consecutive valid frames received (`recovery_confirmation_frames`, default 5).
+6. **`STALE_FROZEN`**: Frames are being received or repeated, but image content is perceptually identical across consecutive checks (camera sensor lockup / frozen RTSP gateway).
+7. **`OFFLINE`**: Connection terminated permanently, maximum reconnect attempts exceeded, or manually stopped.
+8. **`COMPLETED`**: File-based video stream reached normal EOF; pipeline cleanly transitions, keeping console, WebSocket, and last frame active.
+
+### 4.5.2 Ultra-Fast Perceptual Freshness Check
+To detect camera sensor lockups without GPU overhead, IBVAP resizes candidate frames to 32x18 grayscale (576 pixels). Mean Squared Error (MSE) is computed in under 0.05ms on CPU:
+- If `MSE < 1.0` continuously for 30 frames (or > 1.2s), state transitions to `STALE_FROZEN`.
+- Prevents ByteTrack from endlessly drifting or holding ghost tracks when IP cameras freeze on an image.
+
+### 4.5.3 Zero-Fabrication Guarantee
+IBVAP strictly enforces audit integrity:
+- **No synthetic frames**, duplicated frames, or simulated observations are generated during stream interruptions.
+- Stream interruptions are explicitly recorded in `StreamGapRecord` containing `gap_start_utc`, `gap_end_utc`, `duration_seconds`, `frames_dropped_estimated`, and `state_at_interruption`.
+
+### 4.5.4 Kinematic Track Recovery
+When a stream recovers from an interruption of duration $\Delta t \le 5.0\text{s}$:
+- Active tracks prior to the gap are kinematically projected:
+  $$\vec{p}_{\text{extrapolated}} = \vec{p}_{\text{last}} + \vec{v} \cdot \Delta t$$
+- New detections in the first recovered frames are tested for class consistency and spatial proximity ($D \le D_{\max}$).
+- Confirmed matches re-acquire their original `track_id`, preserving trajectory continuity without ID switching.
+
+### 4.5.5 Downstream AI Trust Score Modulation
+Stream health directly affects the `FusionEngine` threat scoring:
+$$\text{Trust} \in [0.1, 1.0]$$
+When stream health degrades (`DEGRADED`, `RECOVERED_STABILIZING`, `STALE_FROZEN`), the risk score is dampened by $\text{Trust}$, and the event explanation explicitly tags operational reason codes (`STREAM_QUALITY_DEGRADED`, `HIGH_STREAM_JITTER`, `STREAM_RECOVERED_UNCERTAIN`), ensuring transparency for border operators.
+
+---
+
 # 5. DEPLOYMENT TOPOLOGY — SIH PROTOTYPE
 
 Do NOT build a distributed production cluster first.

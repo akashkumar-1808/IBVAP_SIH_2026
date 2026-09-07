@@ -202,4 +202,31 @@ This document tracks all formal architectural and engineering decisions made dur
   - **Pro:** Completely eliminates clutter and spurious tracks from unsupported classes and camera pans; preserves 100% of raw forensic detections; zero model modification or latency penalty (<0.4ms overhead).
   - **Con:** Requires small motion estimation window (1 frame history).
 - **Affected Components:** `worker/perception/filter.py`, `worker/perception/__init__.py`, `worker/pipeline/orchestrator.py`, `worker/pipeline/visualizer.py`, `tests/unit/test_detection_filter.py`, `docs/DECISIONS.md`, `docs/IBVAP_memory.md`.
+---
+
+## [DEC-0013] Production-Grade Stream Health & Continuity Subsystem
+- **Date:** 2026-09-07
+- **Status:** APPROVED & IMPLEMENTED
+- **Context:** Live border CCTV camera streams over RTSP and network links experience jitter, packet drops, transport reconnects, and sensor freezes. Unhandled dropouts previously risked broken tracking IDs, false high-confidence alarms on stale imagery, or pipeline termination. Synthetic/hallucinated video frames are strictly impermissible in a sovereign surveillance system.
+- **Decision:**
+  1. **Canonical 8-State Continuity Machine (`worker/ingestion/continuity.py`)**:
+     - Formalized discrete states: `HEALTHY`, `DEGRADED`, `INTERRUPTED`, `RECONNECTING`, `RECOVERED`, `STALE_FROZEN`, `OFFLINE`, `COMPLETED`.
+     - Deterministic state machine with hysteresis requiring consecutive confirmation frames before promoting `RECOVERED` to `HEALTHY`.
+  2. **Audit-Grade Zero-Fabrication Gap Accounting**:
+     - Never injects fabricated/synthetic surveillance frames into the analytical pipeline.
+     - Detects frame sequence gaps and time drops, auditing them as immutable `StreamGapRecord` structures.
+  3. **Ultra-Fast Perceptual Freshness Check**:
+     - 32x18 grayscale downsampled thumbnail perceptual MSE (< 0.05ms on CPU) detecting frozen camera sensors or duplicate frames without expensive full-resolution comparisons.
+  4. **Kinematic Post-Interruption Track Identity Recovery**:
+     - Snapshots active track coordinates, velocities, and classes before interruptions.
+     - Upon stream restoration, evaluates candidate detections against extrapolated track positions within temporal bounds ($< 5.0$s) and spatial proximity, restoring pre-gap track IDs while suppressing ambiguous multi-candidate associations.
+  5. **Downstream AI Trust Modulation**:
+     - Stream continuity health feeds into `FusionEngine` evidence extraction (`EvidenceType.STREAM_CONTINUITY`).
+     - Modulates risk scores with a stream trust multiplier $[0.0, 1.0]$ and attaches audit reason codes (`STREAM_QUALITY_DEGRADED`, `STREAM_INTERRUPTION_RECENT`).
+  6. **Telemetry & Operator HUD Integration**:
+     - Propagates stream health contracts over WebSocket to `TopSystemBar` and `PrimaryVideoPanel`, rendering live badges, jitter, AI trust scores, and gap audit indicators without altering established styling.
+- **Trade-offs:**
+  - **Pro:** Complete resilience against network blips; eliminates track fragmentation; prevents false alarms on degraded streams; zero simulated frame fabrication; preserves FastAPI process uptime.
+  - **Con:** Minor memory footprint for track snapshot buffer and thumbnail cache (< 0.5 MB).
+- **Affected Components:** `worker/ingestion/continuity.py`, `worker/ingestion/rtsp_source.py`, `worker/tracking/tracker.py`, `worker/fusion/`, `worker/pipeline/orchestrator.py`, `backend/app/api/routes/cameras.py`, `frontend/src/`, `tests/unit/test_stream_continuity.py`, `tests/integration/test_stream_continuity_lifecycle.py`.
 

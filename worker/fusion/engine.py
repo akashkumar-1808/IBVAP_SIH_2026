@@ -109,6 +109,7 @@ class FusionEngine(FusionEngineInterface):
         camera_id: str,
         timestamp_utc: datetime,
         sector_id: Optional[str] = None,
+        stream_health: Optional[Any] = None,
     ) -> List[EventRecord]:
         """
         Processes active multi-modal observations and produces or updates EventRecord instances.
@@ -174,6 +175,7 @@ class FusionEngine(FusionEngineInterface):
                 border_track=border_track,
                 sector_context=sector_context,
                 evidence_requests=corroboration_updates,
+                stream_health=stream_health,
             )
 
             # 5. Compute Deterministic Risk Priority Score

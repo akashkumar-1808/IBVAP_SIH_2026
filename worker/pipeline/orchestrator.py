@@ -31,6 +31,10 @@ from worker.ingestion import (
     BoundedFrameQueue,
     FramePacket,
     StreamHealthState,
+    StreamHealthMetrics,
+    StreamContinuityManager,
+    ContinuityConfig,
+    TrackingRecoveryState,
     mask_rtsp_url,
 )
 from worker.environment import EnvironmentAnalyzer, EnvironmentConfig, EnvironmentState
@@ -92,6 +96,10 @@ class LivePipelineOrchestrator:
             auto_persist_db=True,
         ))
         self.visualizer = LiveStreamVisualizer(camera_id=config.camera_id)
+
+        # Stream Health & Continuity Subsystem (DEC-0012)
+        continuity_cfg = ContinuityConfig(expected_fps=25.0)
+        self.continuity_manager = StreamContinuityManager(config.camera_id, continuity_cfg)
 
         # Video Recorder for --record-debug
         self._video_writer: Optional[cv2.VideoWriter] = None
@@ -188,6 +196,7 @@ class LivePipelineOrchestrator:
                 camera_id=self.config.camera_id,
                 rtsp_url=self.config.rtsp_url,
                 max_reconnect_attempts=5,
+                continuity_manager=self.continuity_manager,
             )
         elif self.config.file_path:
             print(f"Opening Video File: {self.config.file_path} ...")
@@ -197,6 +206,7 @@ class LivePipelineOrchestrator:
                 loop=self.config.loop_video,
                 realtime_pacing=True,
             )
+            self.source.continuity_manager = self.continuity_manager
         else:
             raise ValueError("Either rtsp_url, file_path, or synthetic_stream must be configured.")
 
@@ -246,17 +256,25 @@ class LivePipelineOrchestrator:
                     if packet is None:
                         if isinstance(self.source, FileVideoSource):
                             print("\nEnd of video stream reached.")
+                            self.continuity_manager.on_completed()
                             break
                         # RTSP stream reconnecting/transient drop
+                        if hasattr(self, "tracker") and hasattr(self.tracker, "get_active_tracks"):
+                            active = self.tracker.get_active_tracks()
+                            self.continuity_manager.snapshot_tracks_before_gap(active)
+                        self.continuity_manager.on_interruption_detected("Packet read returned None from video source")
                         time.sleep(0.01)
                         continue
-                    self.metrics.frames_received += 1
+
+                self.metrics.frames_received += 1
+                self.continuity_manager.on_frame_received(packet)
 
                 t_frame_start = time.perf_counter()
                 self._process_single_frame(packet)
                 t_frame_end = time.perf_counter()
 
                 total_ms = (t_frame_end - t_frame_start) * 1000.0
+                self.continuity_manager.on_frame_processed(total_ms)
                 self._stage_latencies_history["total"].append(total_ms)
                 if len(self._stage_latencies_history["total"]) > 100:
                     for k in list(self._stage_latencies_history.keys()):
@@ -327,7 +345,24 @@ class LivePipelineOrchestrator:
 
         # Stage 3: Multi-Object Tracking (ByteTrack) - operational targets only
         t0 = time.perf_counter()
-        tracks = self.tracker.update(operational_detections, camera_id=cam_id, timestamp_utc=ts, frame_id=frame_id)
+        recovered_map: Dict[int, int] = {}
+        if self.continuity_manager.state in (StreamHealthState.RECOVERED, StreamHealthState.DEGRADED, StreamHealthState.HEALTHY):
+            if getattr(self.continuity_manager, "_pre_gap_track_snapshots", None):
+                high_dets = [d for d in operational_detections if d.confidence >= getattr(self.tracker, "track_thresh", 0.5)]
+                rec_state, rec_matches = self.continuity_manager.evaluate_track_recovery(
+                    high_dets,
+                    gap_duration_seconds=self.continuity_manager.last_interruption_duration,
+                )
+                if rec_matches:
+                    recovered_map = rec_matches
+
+        tracks = self.tracker.update(
+            operational_detections,
+            camera_id=cam_id,
+            timestamp_utc=ts,
+            frame_id=frame_id,
+            recovered_track_map=recovered_map,
+        )
         self._stage_latencies_history["tracking"].append((time.perf_counter() - t0) * 1000.0)
 
         for tr in tracks:
@@ -349,6 +384,7 @@ class LivePipelineOrchestrator:
 
         # Stage 6: Multi-Modal Evidence Fusion & Events
         t0 = time.perf_counter()
+        stream_health_metrics = self.continuity_manager.get_metrics()
         events = self.fusion_engine.process(
             tracks=tracks,
             spatial_states=spatial_states,
@@ -356,6 +392,7 @@ class LivePipelineOrchestrator:
             behavior_primitives=behaviors,
             camera_id=cam_id,
             timestamp_utc=ts,
+            stream_health=stream_health_metrics,
         )
         self._stage_latencies_history["fusion"].append((time.perf_counter() - t0) * 1000.0)
 
@@ -452,18 +489,32 @@ class LivePipelineOrchestrator:
                         events=events,
                         fps=fps_val,
                         vis_image=vis_img,
+                        stream_health=stream_health_metrics,
                     )
                 except TypeError:
-                    self.on_frame_processed(
-                        packet=packet,
-                        env_state=env_state,
-                        detections=operational_detections,
-                        tracks=tracks,
-                        spatial_states=spatial_states,
-                        behaviors=behaviors,
-                        events=events,
-                        fps=fps_val,
-                    )
+                    try:
+                        self.on_frame_processed(
+                            packet=packet,
+                            env_state=env_state,
+                            detections=operational_detections,
+                            tracks=tracks,
+                            spatial_states=spatial_states,
+                            behaviors=behaviors,
+                            events=events,
+                            fps=fps_val,
+                            vis_image=vis_img,
+                        )
+                    except TypeError:
+                        self.on_frame_processed(
+                            packet=packet,
+                            env_state=env_state,
+                            detections=operational_detections,
+                            tracks=tracks,
+                            spatial_states=spatial_states,
+                            behaviors=behaviors,
+                            events=events,
+                            fps=fps_val,
+                        )
             except Exception as e:
                 logger.warning(f"Error in on_frame_processed hook: {e}")
 

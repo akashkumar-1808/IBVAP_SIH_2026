@@ -38,6 +38,7 @@ class EvidenceType(str, Enum):
     CROSS_CAMERA_ASSOCIATION = "cross_camera_association"
     SECTOR_NORMALITY = "sector_normality"
     EVIDENCE_REQUEST_STATUS = "evidence_request_status"
+    STREAM_CONTINUITY = "stream_continuity"
 
 
 class EvidenceItem(BaseModel):
@@ -68,6 +69,7 @@ class EvidenceExtractor:
         border_track: Optional[Any] = None,
         sector_context: Optional[Any] = None,
         evidence_requests: Optional[List[Any]] = None,
+        stream_health: Optional[Any] = None,
     ) -> List[EvidenceItem]:
         evidence_list: List[EvidenceItem] = []
 
@@ -449,5 +451,62 @@ class EvidenceExtractor:
                         track_id=track.track_id,
                         camera_id=camera_id,
                     ))
+
+        # -------------------------------------------------------------
+        # 9. Stream Health & Continuity Evidence (DEC-0012)
+        # -------------------------------------------------------------
+        if stream_health is not None:
+            sh_state = getattr(stream_health, "state", None)
+            sh_state_val = sh_state.value if hasattr(sh_state, "value") else str(sh_state)
+            trust = getattr(stream_health, "trust_score", 1.0)
+
+            if sh_state_val == "DEGRADED":
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.STREAM_CONTINUITY,
+                    source_module="continuity",
+                    value="stream_degraded",
+                    confidence=trust,
+                    reason_code=FusionReasonCode.STREAM_QUALITY_DEGRADED,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                    metadata={"trust_score": trust, "reason": getattr(stream_health, "status_reason", "")},
+                ))
+            if getattr(stream_health, "last_interruption_duration_s", 0.0) > 0.5:
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.STREAM_CONTINUITY,
+                    source_module="continuity",
+                    value="recent_interruption",
+                    confidence=trust,
+                    reason_code=FusionReasonCode.STREAM_INTERRUPTION_RECENT,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                    metadata={"duration_s": getattr(stream_health, "last_interruption_duration_s", 0.0)},
+                ))
+            trk_rec = getattr(stream_health, "tracking_recovery_state", None)
+            trk_rec_val = trk_rec.value if hasattr(trk_rec, "value") else str(trk_rec)
+            if trk_rec_val == "RECOVERED":
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.STREAM_CONTINUITY,
+                    source_module="continuity",
+                    value="track_recovered",
+                    confidence=0.85,
+                    reason_code=FusionReasonCode.TRACK_RECOVERED_AFTER_GAP,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                ))
+            elif trk_rec_val == "UNCERTAIN":
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.STREAM_CONTINUITY,
+                    source_module="continuity",
+                    value="track_uncertain",
+                    confidence=0.35,
+                    reason_code=FusionReasonCode.TRACK_CONTINUITY_UNCERTAIN,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                ))
 
         return evidence_list

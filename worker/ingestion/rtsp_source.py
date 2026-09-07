@@ -39,6 +39,7 @@ class RTSPVideoSource(VideoSource):
         max_reconnect_delay_seconds: float = 30.0,
         base_reconnect_delay_seconds: float = 1.0,
         max_reconnect_attempts: int = 10,
+        continuity_manager: Optional[Any] = None,
     ):
         super().__init__(camera_id)
         self.rtsp_url = rtsp_url
@@ -47,6 +48,7 @@ class RTSPVideoSource(VideoSource):
         self.max_reconnect_delay_seconds = max_reconnect_delay_seconds
         self.base_reconnect_delay_seconds = base_reconnect_delay_seconds
         self.max_reconnect_attempts = max_reconnect_attempts
+        self.continuity_manager = continuity_manager
 
         self._masked_url = mask_rtsp_url(rtsp_url)
         self._cap: Optional[cv2.VideoCapture] = None
@@ -126,6 +128,11 @@ class RTSPVideoSource(VideoSource):
                 logger.warning(
                     f"RTSP stream '{self._masked_url}' disconnected. Reconnect attempt {reconnect_attempts} in {delay:.1f}s..."
                 )
+                if self.continuity_manager:
+                    try:
+                        self.continuity_manager.on_reconnect_attempt(reconnect_attempts, delay)
+                    except Exception:
+                        pass
                 time.sleep(delay)
 
                 if not self._is_running:
@@ -139,6 +146,11 @@ class RTSPVideoSource(VideoSource):
                     if reconnect_attempts >= self.max_reconnect_attempts:
                         self._health_metrics.state = StreamHealthState.ERROR
                         self._health_metrics.last_error_message = "Max reconnect attempts reached"
+                        if self.continuity_manager:
+                            try:
+                                self.continuity_manager.on_reconnect_failed("Max reconnect attempts reached")
+                            except Exception:
+                                pass
                     continue
 
             # Read frame from stream
@@ -166,6 +178,17 @@ class RTSPVideoSource(VideoSource):
                 )
                 self._frame_id += 1
 
+                if self.continuity_manager:
+                    try:
+                        self.continuity_manager.on_frame_received(
+                            frame_image=frame,
+                            sequence_number=packet.sequence_number,
+                            timestamp_utc=packet.timestamp_utc,
+                            source_fps=self._fps,
+                        )
+                    except Exception:
+                        pass
+
                 with self._lock:
                     if self._latest_frame is not None:
                         self._health_metrics.frames_dropped += 1
@@ -179,6 +202,11 @@ class RTSPVideoSource(VideoSource):
                     logger.warning(
                         f"RTSP stream '{self._masked_url}' frame read timeout ({time_since_last_frame:.1f}s without frame)."
                     )
+                    if self.continuity_manager:
+                        try:
+                            self.continuity_manager.on_interruption_detected(f"Read timeout after {time_since_last_frame:.1f}s")
+                        except Exception:
+                            pass
                     # Trigger reconnect on next iteration
                     if self._cap:
                         try:

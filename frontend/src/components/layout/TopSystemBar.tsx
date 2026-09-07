@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Sun, Moon, User } from 'lucide-react';
-import { CameraInfo, CameraContract, EnvironmentState } from '../../types';
+import { CameraInfo, CameraContract, EnvironmentState, StreamHealthContract } from '../../types';
 
 interface TopSystemBarProps {
   currentSector?: string;
@@ -8,6 +8,7 @@ interface TopSystemBarProps {
   analysisStatus?: string;
   camera?: CameraInfo | null;
   cameraTelemetry?: CameraContract;
+  streamHealth?: StreamHealthContract;
   environment?: EnvironmentState;
   fps: number;
   systemHealth: string;
@@ -18,6 +19,7 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   analysisStatus,
   camera,
   cameraTelemetry,
+  streamHealth,
   environment,
   fps,
 }) => {
@@ -35,27 +37,56 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Real pipeline metrics strictly from telemetry
+  // Real pipeline metrics strictly from telemetry / continuity manager
   const camId = camera?.camera_id || cameraTelemetry?.camera_id || (isLiveMode ? 'DEMO-CAM-01' : '--');
   const sectorName = camera?.sector_name || (isLiveMode ? 'SECTOR B-07' : '--');
   const srcDesc = cameraTelemetry?.source_type ? `SOURCE: ${cameraTelemetry.source_type}` : (isLiveMode ? 'SOURCE: FILE' : 'SOURCE: --');
-  const captureFps = cameraTelemetry?.capture_fps ? cameraTelemetry.capture_fps.toFixed(1) : (isLiveMode ? '25.0' : '--');
-  const procFps = fps > 0 ? fps.toFixed(1) : (cameraTelemetry?.processing_fps ? cameraTelemetry.processing_fps.toFixed(1) : (analysisStatus === 'COMPLETED' ? '0.0' : '--'));
-  const latencyMs = cameraTelemetry?.processing_latency_ms !== undefined ? Math.round(cameraTelemetry.processing_latency_ms) : '--';
-  const frameAgeMs = cameraTelemetry?.frame_age_ms !== undefined ? Math.round(cameraTelemetry.frame_age_ms) : '--';
+  
+  const captureFps = streamHealth?.capture_fps !== undefined 
+    ? streamHealth.capture_fps.toFixed(1) 
+    : (cameraTelemetry?.capture_fps ? cameraTelemetry.capture_fps.toFixed(1) : (isLiveMode ? '25.0' : '--'));
+    
+  const procFps = streamHealth?.processing_fps !== undefined
+    ? streamHealth.processing_fps.toFixed(1)
+    : (fps > 0 ? fps.toFixed(1) : (cameraTelemetry?.processing_fps ? cameraTelemetry.processing_fps.toFixed(1) : (analysisStatus === 'COMPLETED' ? '0.0' : '--')));
+    
+  const latencyMs = streamHealth?.latency_ms !== undefined
+    ? Math.round(streamHealth.latency_ms)
+    : (cameraTelemetry?.processing_latency_ms !== undefined ? Math.round(cameraTelemetry.processing_latency_ms) : '--');
+    
+  const frameAgeMs = streamHealth?.frame_age_ms !== undefined
+    ? Math.round(streamHealth.frame_age_ms)
+    : (cameraTelemetry?.frame_age_ms !== undefined ? Math.round(cameraTelemetry.frame_age_ms) : '--');
 
   const isDay = environment?.lighting ? environment.lighting.toString().toUpperCase().includes('DAY') : true;
   const envLightStr = environment?.lighting ? environment.lighting.toString().toUpperCase() : '--';
   const envVisStr = environment?.visibility ? environment.visibility.toString().toUpperCase() : '--';
 
-  // 4-state lifecycle distinction: SERVER ONLINE, ANALYSIS RUNNING, ANALYSIS COMPLETE, SERVER OFFLINE
+  // 8 Canonical states + lifecycle: HEALTHY, DEGRADED, INTERRUPTED, RECONNECTING, RECOVERED, STALE_FROZEN, OFFLINE, COMPLETED
   let statusBadgeClass = 'badge-offline';
   let statusBadgeText = 'SERVER OFFLINE';
 
+  const healthState = streamHealth?.state;
+
   if (isLiveMode) {
-    if (analysisStatus === 'COMPLETED') {
+    if (analysisStatus === 'COMPLETED' || healthState === 'COMPLETED') {
       statusBadgeClass = 'badge-completed';
       statusBadgeText = 'ANALYSIS COMPLETE';
+    } else if (healthState === 'STALE_FROZEN') {
+      statusBadgeClass = 'badge-warning';
+      statusBadgeText = 'CAMERA FROZEN';
+    } else if (healthState === 'RECONNECTING') {
+      statusBadgeClass = 'badge-warning';
+      statusBadgeText = 'RECONNECTING...';
+    } else if (healthState === 'INTERRUPTED') {
+      statusBadgeClass = 'badge-offline';
+      statusBadgeText = 'STREAM INTERRUPTED';
+    } else if (healthState === 'RECOVERED') {
+      statusBadgeClass = 'badge-running';
+      statusBadgeText = 'STREAM RECOVERED';
+    } else if (healthState === 'DEGRADED') {
+      statusBadgeClass = 'badge-warning';
+      statusBadgeText = 'STREAM DEGRADED';
     } else if (analysisStatus === 'ANALYZING' || analysisStatus === 'EVENT_DETECTED') {
       statusBadgeClass = 'badge-running';
       statusBadgeText = 'ANALYSIS RUNNING';
@@ -64,7 +95,7 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
       statusBadgeText = 'STARTING...';
     } else {
       statusBadgeClass = 'badge-online';
-      statusBadgeText = 'SERVER ONLINE';
+      statusBadgeText = 'STREAM HEALTHY';
     }
   }
 
@@ -85,7 +116,7 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
         <div className="camera-header-block">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span className="camera-header-title">{camId}</span>
-            <span className={statusBadgeClass}>
+            <span className={statusBadgeClass} title={streamHealth?.status_reason || ''}>
               ● {statusBadgeText}
             </span>
           </div>
@@ -122,6 +153,30 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
           <span className="top-metric-val">{frameAgeMs} ms</span>
           <span className="top-metric-lbl">FRAME AGE</span>
         </div>
+
+        {streamHealth && (
+          <>
+            <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
+            <div className="top-metric-item" title={`Inter-frame jitter: ${Math.round(streamHealth.jitter_ms)}ms`}>
+              <span className="top-metric-val">{Math.round(streamHealth.jitter_ms)} ms</span>
+              <span className="top-metric-lbl">JITTER</span>
+            </div>
+
+            <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
+            <div className="top-metric-item" title={`AI Stream Trust: ${(streamHealth.trust_score * 100).toFixed(0)}%`}>
+              <span
+                className="top-metric-val"
+                style={{
+                  color: streamHealth.trust_score >= 0.8 ? '#10B981' : (streamHealth.trust_score >= 0.5 ? '#F59E0B' : '#EF4444'),
+                  fontWeight: 800,
+                }}
+              >
+                {Math.round(streamHealth.trust_score * 100)}%
+              </span>
+              <span className="top-metric-lbl">AI TRUST</span>
+            </div>
+          </>
+        )}
 
         <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }} />
 

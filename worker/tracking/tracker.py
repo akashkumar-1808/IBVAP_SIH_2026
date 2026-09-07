@@ -189,9 +189,11 @@ class ByteTrackTracker(TrackerInterface):
         frame_id: int,
         timestamp_utc: Optional[datetime] = None,
         camera_id: Optional[str] = None,
+        recovered_track_map: Optional[Dict[int, int]] = None,
     ) -> List[TrackState]:
         """
         Updates tracks with detections from current frame using two-stage ByteTrack association.
+        Optionally accepts recovered_track_map for preserving track identity across stream gaps.
         """
         if detections is None:
             raise InvalidDetectionError("Detections list cannot be None")
@@ -269,14 +271,26 @@ class ByteTrackTracker(TrackerInterface):
         # -------------------------------------------------------------
         for det_idx in unmatched_high_dets:
             det = high_dets[det_idx]
+            is_recovered = False
+            if recovered_track_map and det_idx in recovered_track_map:
+                assigned_id = recovered_track_map[det_idx]
+                is_recovered = True
+                # Deduplicate: remove older missed track with this assigned ID
+                all_existing = [st for st in all_existing if st.track_id != assigned_id]
+            else:
+                assigned_id = self._next_track_id
+                self._next_track_id += 1
+
             new_track = STrack(
-                track_id=self._next_track_id,
+                track_id=assigned_id,
                 camera_id=effective_camera,
                 detection=det,
                 max_trajectory_length=self.max_trajectory_length,
             )
-            self._next_track_id += 1
-            if self.min_hits <= 1:
+            if assigned_id >= self._next_track_id:
+                self._next_track_id = assigned_id + 1
+
+            if is_recovered or self.min_hits <= 1:
                 new_track.status = TrackStatus.TRACKED
             all_existing.append(new_track)
 
@@ -305,6 +319,10 @@ class ByteTrackTracker(TrackerInterface):
         active = [st.to_schema() for st in self._tracked_stracks]
         lost = [st.to_schema() for st in self._lost_stracks]
         return active + lost
+
+    def get_active_tracks(self) -> List[TrackState]:
+        """Returns active tracked states."""
+        return [st.to_schema() for st in self._tracked_stracks if st.status == TrackStatus.TRACKED]
 
     def reset(self) -> None:
         """Resets all internal tracks and resets track ID sequence."""

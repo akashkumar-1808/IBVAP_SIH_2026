@@ -14,6 +14,7 @@ import {
   BehaviorPrimitive,
   EventRecord,
   CameraContract,
+  StreamHealthContract,
 } from '../../types';
 
 interface PrimaryVideoPanelProps {
@@ -26,6 +27,7 @@ interface PrimaryVideoPanelProps {
   behaviors: BehaviorPrimitive[];
   activeEvents: EventRecord[];
   cameraTelemetry?: CameraContract;
+  streamHealth?: StreamHealthContract;
   analysisStatus?: string;
   onOpenAddCamera: () => void;
 }
@@ -35,6 +37,7 @@ type SourceStatus = 'IDLE' | 'READY' | 'UPLOADING' | 'READY TO ANALYZE' | 'START
 export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   cameraId,
   cameraTelemetry,
+  streamHealth,
   analysisStatus: incomingStatus,
   onOpenAddCamera,
 }) => {
@@ -253,36 +256,96 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
           <span>{camId}</span>
         </div>
 
-        {/* Video HUD Overlays: Status Badge (Top-Right) */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '10px',
-            right: '12px',
-            pointerEvents: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: analysisStatus === 'COMPLETED' ? 'rgba(6, 78, 59, 0.85)' : 'rgba(0, 0, 0, 0.65)',
-            border: `1px solid ${analysisStatus === 'COMPLETED' ? '#10B981' : 'rgba(239, 68, 68, 0.4)'}`,
-            padding: '3px 8px',
-            borderRadius: '4px',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '10px',
-            fontWeight: 800,
-            color: '#FFFFFF',
-          }}
-        >
-          <span
-            style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: analysisStatus === 'COMPLETED' ? '#10B981' : 'var(--color-red)',
-            }}
-          />
-          <span>{analysisStatus === 'COMPLETED' ? 'ANALYSIS COMPLETE' : 'LIVE'}</span>
-        </div>
+        {/* Video HUD Overlays: Status Badge & Continuity (Top-Right) */}
+        {(() => {
+          let badgeBg = 'rgba(0, 0, 0, 0.65)';
+          let badgeBorder = 'rgba(239, 68, 68, 0.4)';
+          let dotColor = 'var(--color-red)';
+          let badgeLabel = 'LIVE';
+
+          if (analysisStatus === 'COMPLETED' || streamHealth?.state === 'COMPLETED') {
+            badgeBg = 'rgba(6, 78, 59, 0.85)';
+            badgeBorder = '#10B981';
+            dotColor = '#10B981';
+            badgeLabel = 'ANALYSIS COMPLETE';
+          } else if (streamHealth?.state === 'STALE_FROZEN') {
+            badgeBg = 'rgba(180, 83, 9, 0.85)';
+            badgeBorder = '#F59E0B';
+            dotColor = '#F59E0B';
+            badgeLabel = 'FROZEN SENSOR';
+          } else if (streamHealth?.state === 'RECONNECTING') {
+            badgeBg = 'rgba(180, 83, 9, 0.85)';
+            badgeBorder = '#F59E0B';
+            dotColor = '#F59E0B';
+            badgeLabel = 'RECONNECTING';
+          } else if (streamHealth?.state === 'INTERRUPTED') {
+            badgeBg = 'rgba(153, 27, 27, 0.85)';
+            badgeBorder = '#EF4444';
+            dotColor = '#EF4444';
+            badgeLabel = 'INTERRUPTED';
+          } else if (streamHealth?.state === 'RECOVERED') {
+            badgeBg = 'rgba(30, 58, 138, 0.85)';
+            badgeBorder = '#38BDF8';
+            dotColor = '#38BDF8';
+            badgeLabel = 'RECOVERED';
+          } else if (streamHealth?.state === 'DEGRADED') {
+            badgeBg = 'rgba(180, 83, 9, 0.85)';
+            badgeBorder = '#F59E0B';
+            dotColor = '#F59E0B';
+            badgeLabel = 'DEGRADED';
+          } else if (streamHealth?.state === 'HEALTHY') {
+            badgeBg = 'rgba(6, 78, 59, 0.75)';
+            badgeBorder = 'rgba(16, 185, 129, 0.4)';
+            dotColor = '#10B981';
+            badgeLabel = 'LIVE · HEALTHY';
+          }
+
+          return (
+            <div style={{ position: 'absolute', top: '10px', right: '12px', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: badgeBg,
+                  border: `1px solid ${badgeBorder}`,
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: '#FFFFFF',
+                }}
+              >
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    backgroundColor: dotColor,
+                  }}
+                />
+                <span>{badgeLabel}</span>
+              </div>
+              {streamHealth && streamHealth.gap_count > 0 && analysisStatus !== 'COMPLETED' && (
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.75)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    padding: '2px 6px',
+                    borderRadius: '3px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '9px',
+                    color: '#F59E0B',
+                    fontWeight: 600,
+                  }}
+                >
+                  AUDIT: {streamHealth.gap_count} GAPS ({streamHealth.dropped_frames_total} DROPPED)
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Video HUD Overlays: Post-completion indicator banner */}
         {analysisStatus === 'COMPLETED' && (
@@ -307,6 +370,58 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
             }}
           >
             ● VIDEO REACHED EOF · LAST PROCESSED KEYFRAME PRESERVED
+          </div>
+        )}
+
+        {/* Video HUD Overlays: Camera Frozen Warning */}
+        {streamHealth?.is_frozen && analysisStatus !== 'COMPLETED' && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              pointerEvents: 'none',
+              background: 'rgba(180, 83, 9, 0.9)',
+              border: '1px solid #F59E0B',
+              borderRadius: '4px',
+              padding: '4px 12px',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#FFFFFF',
+              letterSpacing: '0.04em',
+              fontFamily: 'var(--font-mono)',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.6)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ● STATIC IMAGERY DETECTED · SUSPECTED SENSOR OR ENCODER FREEZE
+          </div>
+        )}
+
+        {/* Video HUD Overlays: Reconnecting Banner */}
+        {streamHealth?.state === 'RECONNECTING' && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              pointerEvents: 'none',
+              background: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid #F59E0B',
+              borderRadius: '4px',
+              padding: '4px 12px',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#F59E0B',
+              letterSpacing: '0.04em',
+              fontFamily: 'var(--font-mono)',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.6)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ● STREAM INTERRUPTED · AUTOMATIC BOUNDED BACKOFF ACTIVE
           </div>
         )}
       </div>

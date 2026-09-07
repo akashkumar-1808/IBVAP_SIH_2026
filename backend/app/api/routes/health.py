@@ -31,10 +31,7 @@ async def get_health(response: Response, check_db: bool = True):
         db_status, db_message = "skipped", "Database check skipped for lightweight probe"
 
     is_healthy = db_status in ("healthy", "not_configured", "skipped")
-    overall_status = "ok" if is_healthy else "degraded" if db_status in ("degraded",) else "unhealthy"
-
-    if overall_status == "unhealthy":
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    overall_status = "ok" if is_healthy else "degraded"
 
     return HealthResponse(
         status=overall_status,

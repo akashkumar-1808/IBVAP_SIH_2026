@@ -49,7 +49,11 @@ async def check_database_health() -> Tuple[str, Optional[str]]:
     Returns a tuple of (status_string, optional_error_message).
     Status values: 'healthy', 'unreachable', 'not_configured'.
     Never leaks API keys or internal connection strings.
+    Runs blocking sync network query in a background thread with strict timeout
+    so it never freezes the FastAPI async event loop.
     """
+    import asyncio
+
     if not settings.is_supabase_configured:
         return "not_configured", "Supabase URL and API keys are not configured in environment"
 
@@ -57,11 +61,17 @@ async def check_database_health() -> Tuple[str, Optional[str]]:
     if client is None:
         return "unreachable", "Failed to initialize Supabase client instance"
 
-    try:
+    def _sync_ping():
         # Perform a lightweight ping query against the database via PostgREST
         # Query the 'cameras' table with a limit of 0 to verify connection & auth
-        response = client.table("cameras").select("id", count="exact").limit(0).execute()
+        return client.table("cameras").select("id", count="exact").limit(0).execute()
+
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_sync_ping), timeout=2.0)
         return "healthy", None
+    except asyncio.TimeoutError:
+        logger.warning("Database health check timed out after 2.0s; operating in local fallback mode.")
+        return "unreachable", "Database ping timed out"
     except Exception as exc:
         err_msg = str(exc)
         # Check if table doesn't exist yet (schema not applied) vs connection/auth failure

@@ -42,13 +42,19 @@ def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
 
 def check_ibvap_health(host: str, port: int) -> bool:
     """Verifies if an active server at host:port is genuinely an IBVAP backend."""
+    import urllib.error
     try:
-        url = f"http://{host}:{port}/health"
+        url = f"http://{host}:{port}/health?check_db=false"
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=1.5) as resp:
-            if resp.status == 200:
-                data = json.loads(resp.read().decode("utf-8"))
-                return "IBVAP" in data.get("app_name", "")
+            data = json.loads(resp.read().decode("utf-8"))
+            return "IBVAP" in data.get("app_name", "")
+    except urllib.error.HTTPError as err:
+        try:
+            data = json.loads(err.read().decode("utf-8"))
+            return "IBVAP" in data.get("app_name", "")
+        except Exception:
+            pass
     except Exception:
         pass
     return False
@@ -92,18 +98,26 @@ def find_available_port(start_port: int, host: str = "127.0.0.1") -> int:
 
 def wait_for_server(url: str, timeout_sec: float = 20.0) -> bool:
     """Polls backend health endpoint until online AND verified as IBVAP-Backend."""
+    import urllib.error
     start = time.time()
+    probe_url = f"{url}?check_db=false" if "?" not in url else f"{url}&check_db=false"
     while time.time() - start < timeout_sec:
         try:
-            req = urllib.request.Request(url)
+            req = urllib.request.Request(probe_url)
             with urllib.request.urlopen(req, timeout=1.5) as resp:
-                if resp.status == 200:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    if "IBVAP" in data.get("app_name", ""):
-                        return True
+                data = json.loads(resp.read().decode("utf-8"))
+                if "IBVAP" in data.get("app_name", ""):
+                    return True
+        except urllib.error.HTTPError as err:
+            try:
+                data = json.loads(err.read().decode("utf-8"))
+                if "IBVAP" in data.get("app_name", ""):
+                    return True
+            except Exception:
+                pass
         except Exception:
             pass
-        time.sleep(0.5)
+        time.sleep(0.3)
     return False
 
 

@@ -39,10 +39,11 @@ def _generate_fallback_frame(camera_id: str) -> bytes:
 
 
 def _frame_generator(camera_id: str):
-    """Yields multipart/x-mixed-replace MJPEG frame stream."""
+    """Yields multipart/x-mixed-replace MJPEG frame stream, preserving last processed frame indefinitely."""
     while True:
         frame_data = _LATEST_FRAMES.get(camera_id)
-        if frame_data and (time.time() - frame_data[1]) < 3.0:
+        if frame_data:
+            # Always preserve and stream the last processed/annotated frame on EOF
             jpg_bytes = frame_data[0]
         else:
             jpg_bytes = _generate_fallback_frame(camera_id)

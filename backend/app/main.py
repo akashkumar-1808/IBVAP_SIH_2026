@@ -28,11 +28,13 @@ async def lifespan(app: FastAPI):
     settings.ensure_storage_directories()
 
     if settings.is_supabase_configured:
-        try:
-            db_status, msg = await asyncio.wait_for(check_database_health(), timeout=3.0)
-            logger.info(f"Initial Supabase DB check: status={db_status} msg={msg or 'ok'}")
-        except Exception as exc:
-            logger.warning(f"Initial Supabase DB check timed out or failed: {exc}")
+        async def _initial_db_check():
+            try:
+                db_status, msg = await check_database_health()
+                logger.info(f"Initial Supabase DB check: status={db_status} msg={msg or 'ok'}")
+            except Exception as exc:
+                logger.warning(f"Initial Supabase DB check notice: {exc}")
+        asyncio.create_task(_initial_db_check())
     else:
         logger.warning("Supabase credentials not set in environment. Running in unconfigured local mode.")
 

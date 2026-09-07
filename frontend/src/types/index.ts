@@ -202,6 +202,8 @@ export interface CameraContract {
 
 export interface TelemetryPacket {
   camera_id: string;
+  session_id?: string;
+  analysis_status?: string;
   timestamp_utc: string;
   fps: number;
   is_calibrated: boolean;

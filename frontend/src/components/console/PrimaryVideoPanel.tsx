@@ -26,6 +26,7 @@ interface PrimaryVideoPanelProps {
   behaviors: BehaviorPrimitive[];
   activeEvents: EventRecord[];
   cameraTelemetry?: CameraContract;
+  analysisStatus?: string;
   onOpenAddCamera: () => void;
 }
 
@@ -34,6 +35,7 @@ type SourceStatus = 'IDLE' | 'READY' | 'UPLOADING' | 'READY TO ANALYZE' | 'START
 export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   cameraId,
   cameraTelemetry,
+  analysisStatus: incomingStatus,
   onOpenAddCamera,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +51,13 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [isActionBusy, setIsActionBusy] = useState<boolean>(false);
+
+  // Sync real-time status from WebSocket telemetry if provided
+  useEffect(() => {
+    if (incomingStatus) {
+      setAnalysisStatus(incomingStatus as SourceStatus);
+    }
+  }, [incomingStatus]);
 
   const camId = cameraId || 'DEMO-CAM-01';
 
@@ -244,7 +253,7 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
           <span>{camId}</span>
         </div>
 
-        {/* Video HUD Overlays: LIVE Badge (Top-Right) */}
+        {/* Video HUD Overlays: Status Badge (Top-Right) */}
         <div
           style={{
             position: 'absolute',
@@ -253,9 +262,9 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
             pointerEvents: 'none',
             display: 'flex',
             alignItems: 'center',
-            gap: '5px',
-            background: 'rgba(0, 0, 0, 0.65)',
-            border: '1px solid rgba(239, 68, 68, 0.4)',
+            gap: '6px',
+            background: analysisStatus === 'COMPLETED' ? 'rgba(6, 78, 59, 0.85)' : 'rgba(0, 0, 0, 0.65)',
+            border: `1px solid ${analysisStatus === 'COMPLETED' ? '#10B981' : 'rgba(239, 68, 68, 0.4)'}`,
             padding: '3px 8px',
             borderRadius: '4px',
             fontFamily: 'var(--font-mono)',
@@ -264,9 +273,42 @@ export const PrimaryVideoPanel: React.FC<PrimaryVideoPanelProps> = ({
             color: '#FFFFFF',
           }}
         >
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--color-red)' }} />
-          <span>LIVE</span>
+          <span
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: analysisStatus === 'COMPLETED' ? '#10B981' : 'var(--color-red)',
+            }}
+          />
+          <span>{analysisStatus === 'COMPLETED' ? 'ANALYSIS COMPLETE' : 'LIVE'}</span>
         </div>
+
+        {/* Video HUD Overlays: Post-completion indicator banner */}
+        {analysisStatus === 'COMPLETED' && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              pointerEvents: 'none',
+              background: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid rgba(16, 185, 129, 0.5)',
+              borderRadius: '4px',
+              padding: '4px 12px',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#10B981',
+              letterSpacing: '0.04em',
+              fontFamily: 'var(--font-mono)',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.6)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ● VIDEO REACHED EOF · LAST PROCESSED KEYFRAME PRESERVED
+          </div>
+        )}
       </div>
 
       {/* Video Source & Intelligence Analysis Bar */}

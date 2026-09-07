@@ -91,9 +91,36 @@ export const App: React.FC = () => {
       .catch(() => setCalibration(null));
   }, [selectedCameraId]);
 
+  // Track session ID to reset when a new analysis starts
+  const currentSessionIdRef = useRef<string | null>(null);
+
   // 3. Connect to Real-Time Telemetry WebSocket
   const handleTelemetryPacket = useCallback((packet: TelemetryPacket) => {
-    setTelemetry(packet);
+    // Check if new analysis session began
+    if (packet.session_id && currentSessionIdRef.current && packet.session_id !== currentSessionIdRef.current) {
+      currentSessionIdRef.current = packet.session_id;
+      lastAlertedEventIdRef.current = null;
+    } else if (packet.session_id && !currentSessionIdRef.current) {
+      currentSessionIdRef.current = packet.session_id;
+    }
+
+    setTelemetry((prev) => {
+      // When analysis finishes, keep all previous tracks/spatial/behavior/events preserved
+      if (packet.analysis_status === 'COMPLETED') {
+        return {
+          ...prev,
+          ...packet,
+          tracks: packet.tracks && packet.tracks.length > 0 ? packet.tracks : prev.tracks,
+          spatial_states: packet.spatial_states && packet.spatial_states.length > 0 ? packet.spatial_states : prev.spatial_states,
+          behavior_primitives: packet.behavior_primitives && packet.behavior_primitives.length > 0 ? packet.behavior_primitives : prev.behavior_primitives,
+          active_events: packet.active_events && packet.active_events.length > 0 ? packet.active_events : prev.active_events,
+          environment: packet.environment || prev.environment,
+          camera: packet.camera || prev.camera,
+        };
+      }
+      return packet;
+    });
+
     if (packet.active_events && packet.active_events.length > 0) {
       setEvents((prev) => {
         const updated = [...prev];
@@ -200,6 +227,7 @@ export const App: React.FC = () => {
       {/* 1. Top Continuous Command System Bar */}
       <TopSystemBar
         isLiveMode={wsStatus === 'CONNECTED'}
+        analysisStatus={telemetry.analysis_status}
         camera={selectedCam}
         cameraTelemetry={telemetry.camera}
         environment={telemetry.environment}
@@ -234,6 +262,7 @@ export const App: React.FC = () => {
               behaviors={telemetry.behavior_primitives}
               activeEvents={telemetry.active_events}
               cameraTelemetry={telemetry.camera}
+              analysisStatus={telemetry.analysis_status}
               onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
             />
 

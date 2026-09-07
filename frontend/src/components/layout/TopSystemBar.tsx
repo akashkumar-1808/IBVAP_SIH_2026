@@ -5,6 +5,7 @@ import { CameraInfo, CameraContract, EnvironmentState } from '../../types';
 interface TopSystemBarProps {
   currentSector?: string;
   isLiveMode: boolean;
+  analysisStatus?: string;
   camera?: CameraInfo | null;
   cameraTelemetry?: CameraContract;
   environment?: EnvironmentState;
@@ -14,6 +15,7 @@ interface TopSystemBarProps {
 
 export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   isLiveMode,
+  analysisStatus,
   camera,
   cameraTelemetry,
   environment,
@@ -38,13 +40,33 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   const sectorName = camera?.sector_name || (isLiveMode ? 'SECTOR B-07' : '--');
   const srcDesc = cameraTelemetry?.source_type ? `SOURCE: ${cameraTelemetry.source_type}` : (isLiveMode ? 'SOURCE: FILE' : 'SOURCE: --');
   const captureFps = cameraTelemetry?.capture_fps ? cameraTelemetry.capture_fps.toFixed(1) : (isLiveMode ? '25.0' : '--');
-  const procFps = fps > 0 ? fps.toFixed(1) : (cameraTelemetry?.processing_fps ? cameraTelemetry.processing_fps.toFixed(1) : '--');
+  const procFps = fps > 0 ? fps.toFixed(1) : (cameraTelemetry?.processing_fps ? cameraTelemetry.processing_fps.toFixed(1) : (analysisStatus === 'COMPLETED' ? '0.0' : '--'));
   const latencyMs = cameraTelemetry?.processing_latency_ms !== undefined ? Math.round(cameraTelemetry.processing_latency_ms) : '--';
   const frameAgeMs = cameraTelemetry?.frame_age_ms !== undefined ? Math.round(cameraTelemetry.frame_age_ms) : '--';
 
   const isDay = environment?.lighting ? environment.lighting.toString().toUpperCase().includes('DAY') : true;
   const envLightStr = environment?.lighting ? environment.lighting.toString().toUpperCase() : '--';
   const envVisStr = environment?.visibility ? environment.visibility.toString().toUpperCase() : '--';
+
+  // 4-state lifecycle distinction: SERVER ONLINE, ANALYSIS RUNNING, ANALYSIS COMPLETE, SERVER OFFLINE
+  let statusBadgeClass = 'badge-offline';
+  let statusBadgeText = 'SERVER OFFLINE';
+
+  if (isLiveMode) {
+    if (analysisStatus === 'COMPLETED') {
+      statusBadgeClass = 'badge-completed';
+      statusBadgeText = 'ANALYSIS COMPLETE';
+    } else if (analysisStatus === 'ANALYZING' || analysisStatus === 'EVENT_DETECTED') {
+      statusBadgeClass = 'badge-running';
+      statusBadgeText = 'ANALYSIS RUNNING';
+    } else if (analysisStatus === 'STARTING') {
+      statusBadgeClass = 'badge-running';
+      statusBadgeText = 'STARTING...';
+    } else {
+      statusBadgeClass = 'badge-online';
+      statusBadgeText = 'SERVER ONLINE';
+    }
+  }
 
   return (
     <header className="top-system-bar">
@@ -63,8 +85,8 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
         <div className="camera-header-block">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span className="camera-header-title">{camId}</span>
-            <span className={isLiveMode ? 'badge-online' : 'badge-offline'}>
-              ● {isLiveMode ? 'ONLINE' : 'CONNECTING'}
+            <span className={statusBadgeClass}>
+              ● {statusBadgeText}
             </span>
           </div>
           <span className="camera-header-sub">

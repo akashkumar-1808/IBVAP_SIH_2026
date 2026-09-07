@@ -53,6 +53,7 @@ _CAMERAS_REGISTRY: List[Dict[str, Any]] = [
 _RUNNING_ORCHESTRATORS: Dict[str, LivePipelineOrchestrator] = {}
 _RUNNING_THREADS: Dict[str, threading.Thread] = {}
 _ANALYSIS_STATUS: Dict[str, Dict[str, Any]] = {}
+_LAST_TELEMETRY: Dict[str, Dict[str, Any]] = {}
 _ANALYSIS_LOCK = threading.Lock()
 
 
@@ -413,6 +414,7 @@ def _build_on_frame_callback(cam_id: str, rtsp_url: Optional[str], sector_id: st
             "border_track": border_track_payload,
             "sector_context": sector_context_payload,
         }
+        _LAST_TELEMETRY[cam_id] = telemetry_payload.copy()
         broadcast_telemetry_sync(telemetry_payload)
 
     return on_frame_callback
@@ -640,21 +642,59 @@ def _run_analysis_background(
         orchestrator.run()
 
         logger.info(f"[ANALYSIS_COMPLETED] Video analysis completed successfully for camera '{cam_id}' (session '{session_id}')")
+        completed_at_iso = datetime.now(timezone.utc).isoformat()
         _ANALYSIS_STATUS[cam_id] = {
             "session_id": session_id,
             "status": "COMPLETED",
             "camera_id": cam_id,
             "video_path": video_file_path or rtsp_url,
             "file_name": source_name,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": completed_at_iso,
         }
-        broadcast_telemetry_sync({
-            "camera_id": cam_id,
-            "session_id": session_id,
-            "analysis_status": "COMPLETED",
-            "status": "COMPLETED",
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        })
+
+        # Build comprehensive COMPLETED telemetry packet preserving last state
+        completed_telem = _LAST_TELEMETRY.get(cam_id, {}).copy()
+        if not completed_telem:
+            completed_telem = initial_telemetry.copy()
+
+        completed_telem["analysis_status"] = "COMPLETED"
+        completed_telem["status"] = "COMPLETED"
+        completed_telem["session_id"] = session_id
+        completed_telem["camera_id"] = cam_id
+        completed_telem["timestamp_utc"] = completed_at_iso
+        completed_telem["fps"] = 0.0
+
+        if "camera" in completed_telem and isinstance(completed_telem["camera"], dict):
+            completed_telem["camera"]["processing_fps"] = 0.0
+            completed_telem["camera"]["capture_fps"] = 0.0
+            completed_telem["camera"]["output_fps"] = 0.0
+            completed_telem["camera"]["connection_status"] = "ONLINE"
+
+        _LAST_TELEMETRY[cam_id] = completed_telem.copy()
+        broadcast_telemetry_sync(completed_telem)
+
+        # Start post-completion WebSocket heartbeat so browser connection stays active indefinitely
+        def _post_complete_heartbeat():
+            while (
+                _ANALYSIS_STATUS.get(cam_id, {}).get("session_id") == session_id
+                and _ANALYSIS_STATUS.get(cam_id, {}).get("status") == "COMPLETED"
+            ):
+                time.sleep(2.5)
+                if (
+                    _ANALYSIS_STATUS.get(cam_id, {}).get("session_id") != session_id
+                    or _ANALYSIS_STATUS.get(cam_id, {}).get("status") != "COMPLETED"
+                ):
+                    break
+                heartbeat = _LAST_TELEMETRY.get(cam_id, {}).copy()
+                if heartbeat:
+                    heartbeat["timestamp_utc"] = datetime.now(timezone.utc).isoformat()
+                    broadcast_telemetry_sync(heartbeat)
+
+        threading.Thread(
+            target=_post_complete_heartbeat,
+            daemon=True,
+            name=f"Heartbeat-{cam_id}-{session_id}",
+        ).start()
 
     except Exception as exc:
         logger.error(f"[ANALYSIS_ERROR] Background pipeline failed on camera '{cam_id}' (session '{session_id}'): {exc}", exc_info=True)

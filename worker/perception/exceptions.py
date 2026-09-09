@@ -3,13 +3,13 @@ class PerceptionError(Exception):
     pass
 
 
-class ModelNotFoundError(PerceptionError):
-    """Raised when the specified model file or weights artifact cannot be found."""
+class ModelLoadError(PerceptionError):
+    """Raised when loading or initializing the detection model fails."""
     pass
 
 
-class ModelLoadError(PerceptionError):
-    """Raised when loading or initializing the detection model fails."""
+class ModelNotFoundError(ModelLoadError):
+    """Raised when the specified model file or weights artifact cannot be found."""
     pass
 
 
@@ -26,3 +26,9 @@ class InvalidInputError(PerceptionError):
 class UnsupportedDeviceError(PerceptionError):
     """Raised when requesting an unavailable compute device (e.g., CUDA on CPU-only host)."""
     pass
+
+
+class ModelCompatibilityError(PerceptionError):
+    """Raised when the installed model runtime or framework does not support the requested model family or weights architecture."""
+    pass
+

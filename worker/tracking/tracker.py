@@ -61,6 +61,7 @@ class STrack:
         self.center_xy = (cx, cy)
         self.velocity_xy = (0.0, 0.0)
         self.speed_pixels_per_sec = 0.0
+        self.keypoints = detection.keypoints
 
         self.trajectory: List[TrajectoryPoint] = [
             TrajectoryPoint(
@@ -91,6 +92,9 @@ class STrack:
         self.missed_frames = 0
         self.last_seen = detection.timestamp_utc
         self.class_id = detection.class_id  # update class if high-confidence refined
+
+        if detection.keypoints is not None:
+            self.keypoints = detection.keypoints
 
         # Bounded confidence history (max 30 entries)
         self.confidence_history.append(detection.confidence)
@@ -152,6 +156,7 @@ class STrack:
             last_seen=self.last_seen,
             confidence_history=list(self.confidence_history),
             trajectory=list(self.trajectory),
+            keypoints=self.keypoints,
         )
 
 

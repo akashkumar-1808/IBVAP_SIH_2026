@@ -22,8 +22,11 @@ class LoiteringDetector:
         first_position_in_zone: Optional[Tuple[float, float]],
         timestamp_utc: datetime,
     ) -> Optional[BehaviorPrimitive]:
+        # Zone resolution
+        zone_id = spatial.current_zone_id or (spatial.border_side.value if getattr(spatial, "border_side", None) and spatial.border_side.value in ("warning_buffer", "restricted") else None)
+
         # Track must be currently inside a zone (RESTRICTED, BUFFER, or CRITICAL)
-        if spatial.current_zone_id is None or zone_entry_time is None or first_position_in_zone is None:
+        if zone_id is None or zone_entry_time is None or first_position_in_zone is None:
             return None
 
         # Dwell duration inside the zone
@@ -40,8 +43,29 @@ class LoiteringDetector:
         if displacement > self.config.loitering_max_displacement_px:
             return None
 
+        # Track confidence and pose telemetry
+        conf = round(track.confidence_history[-1], 2) if getattr(track, "confidence_history", None) and len(track.confidence_history) > 0 else 0.90
+        pose_data = {}
+        if getattr(track, "keypoints", None) is not None:
+            pose_data["has_pose"] = True
+            pose_data["pose_keypoints_count"] = len(track.keypoints)
+            if getattr(track, "keypoint_scores", None) and len(track.keypoint_scores) > 0:
+                pose_data["pose_mean_confidence"] = round(float(sum(track.keypoint_scores) / len(track.keypoint_scores)), 2)
+        else:
+            pose_data["has_pose"] = False
+
+        supporting = {
+            "displacement_px": round(displacement, 2),
+            "max_allowed_displacement_px": self.config.loitering_max_displacement_px,
+            "zone_dwell_seconds": round(dwell_seconds, 2),
+            "speed_pixels_per_sec": round(getattr(track, "speed_pixels_per_sec", 0.0), 2),
+            **pose_data,
+        }
+        if getattr(spatial, "border_distance_m", None) is not None:
+            supporting["border_distance_m"] = spatial.border_distance_m
+
         # Loitering criteria satisfied
-        behavior_id = f"{spatial.camera_id}_t{track.track_id}_loitering_{spatial.current_zone_id}"
+        behavior_id = f"{spatial.camera_id}_t{track.track_id}_loitering_{zone_id}"
         return BehaviorPrimitive(
             behavior_id=behavior_id,
             camera_id=spatial.camera_id,
@@ -52,11 +76,10 @@ class LoiteringDetector:
             first_observed_utc=zone_entry_time,
             last_observed_utc=timestamp_utc,
             duration_seconds=round(dwell_seconds, 2),
-            zone_id=spatial.current_zone_id,
+            zone_id=zone_id,
             reason_codes=[ReasonCode.DWELL_TIME_EXCEEDED, ReasonCode.LOW_DISPLACEMENT],
-            supporting_data={
-                "displacement_px": round(displacement, 2),
-                "max_allowed_displacement_px": self.config.loitering_max_displacement_px,
-                "zone_dwell_seconds": round(dwell_seconds, 2),
-            },
+            confidence=conf,
+            triggering_condition=f"Dwell time {round(dwell_seconds, 2)}s in zone '{zone_id}' exceeded threshold {self.config.loitering_seconds}s (displacement: {round(displacement, 1)}px <= {self.config.loitering_max_displacement_px}px)",
+            supporting_data=supporting,
         )
+

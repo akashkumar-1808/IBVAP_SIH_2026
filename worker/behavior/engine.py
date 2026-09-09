@@ -13,6 +13,7 @@ from .schemas import (
 from .loitering import LoiteringDetector
 from .approach import ApproachDetector
 from .occupancy import OccupancyDetector, FenceBreachDetector
+from .speed import SpeedAnomalyDetector
 from ..tracking.schemas import TrackState
 from ..spatial.schemas import SpatialState, MovementDirection, ZoneType
 from ..environment.schemas import EnvironmentState
@@ -64,6 +65,7 @@ class BehaviorEngine(BehaviorEngineInterface):
             "approach": ApproachDetector(config),
             "occupancy": OccupancyDetector(config),
             "fence": FenceBreachDetector(config),
+            "speed": SpeedAnomalyDetector(config),
         }
         if camera_id not in self._camera_track_memories:
             self._camera_track_memories[camera_id] = {}
@@ -110,10 +112,16 @@ class BehaviorEngine(BehaviorEngineInterface):
 
             mem = track_mem_map[t_id]
 
+            effective_zone = spatial.current_zone_id or (
+                spatial.border_side.value
+                if getattr(spatial, "border_side", None) and spatial.border_side.value in ("warning_buffer", "restricted")
+                else None
+            )
+
             # -------------------------------------------------------------
             # 1. Update Zone Entry / Exit Temporal State
             # -------------------------------------------------------------
-            if spatial.current_zone_id != mem.current_zone_id:
+            if effective_zone != mem.current_zone_id:
                 # Exited previous zone -> complete zone-dependent behaviors
                 if mem.current_zone_id is not None:
                     for b_id in list(mem.active_behaviors.keys()):
@@ -123,8 +131,8 @@ class BehaviorEngine(BehaviorEngineInterface):
                             del mem.active_behaviors[b_id]
 
                 # Entered new zone
-                mem.current_zone_id = spatial.current_zone_id
-                if spatial.current_zone_id is not None:
+                mem.current_zone_id = effective_zone
+                if effective_zone is not None:
                     mem.zone_entry_time = timestamp_utc
                     mem.first_position_in_zone = track.center_xy
                 else:
@@ -193,7 +201,7 @@ class BehaviorEngine(BehaviorEngineInterface):
             if occ_primitive:
                 self._upsert_primitive(mem, occ_primitive, active_primitives)
 
-            # D. Fence Breach
+            # D. Fence Breach & Border Crossing
             fence_primitives = detectors["fence"].evaluate(
                 track=track,
                 spatial=spatial,
@@ -201,6 +209,22 @@ class BehaviorEngine(BehaviorEngineInterface):
             )
             for fp in fence_primitives:
                 self._upsert_primitive(mem, fp, active_primitives)
+
+            # E. Speed Anomaly
+            if "speed" in detectors:
+                speed_primitive = detectors["speed"].evaluate(
+                    track=track,
+                    spatial=spatial,
+                    timestamp_utc=timestamp_utc,
+                )
+                if speed_primitive:
+                    self._upsert_primitive(mem, speed_primitive, active_primitives)
+                else:
+                    for b_id in list(mem.active_behaviors.keys()):
+                        if mem.active_behaviors[b_id].behavior_type == BehaviorType.SPEED_ANOMALY:
+                            mem.active_behaviors[b_id].status = BehaviorStatus.COMPLETED
+                            mem.active_behaviors[b_id].last_observed_utc = timestamp_utc
+                            del mem.active_behaviors[b_id]
 
         # -------------------------------------------------------------
         # 4. Prune Expired Tracks
@@ -218,13 +242,15 @@ class BehaviorEngine(BehaviorEngineInterface):
         new_primitive: BehaviorPrimitive,
         output_list: List[BehaviorPrimitive],
     ) -> None:
-        """De-duplicates active behaviors, updating duration and timestamps on sustained events."""
+        """De-duplicates active behaviors, updating duration, confidence, and timestamps on sustained events."""
         b_id = new_primitive.behavior_id
         if b_id in mem.active_behaviors:
             existing = mem.active_behaviors[b_id]
             existing.last_observed_utc = new_primitive.last_observed_utc
             existing.duration_seconds = new_primitive.duration_seconds
             existing.supporting_data = new_primitive.supporting_data
+            existing.confidence = new_primitive.confidence
+            existing.triggering_condition = new_primitive.triggering_condition
             output_list.append(existing)
         else:
             mem.active_behaviors[b_id] = new_primitive

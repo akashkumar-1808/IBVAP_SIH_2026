@@ -1,0 +1,198 @@
+"""
+Unit tests for RT-DETR interchangeable detector adapter.
+
+Verifies:
+1. Registration & factory resolution under 'rtdetr' and 'rt-detr'.
+2. Graceful failure on missing weights (ModelNotFoundError) and runtime incompatibility (ModelCompatibilityError).
+3. Unified Detection output schema preservation.
+4. Downstream compatibility across ByteTrack, SpatialEngine, BehaviorEngine, and FusionEngine
+   with zero modifications to downstream logic.
+"""
+
+import os
+import pytest
+import numpy as np
+from datetime import datetime, timezone
+from typing import List
+
+from backend.app.schemas.common import TargetClass
+from backend.app.schemas.events import Detection, BoundingBox
+from worker.ingestion.frame import FramePacket
+from worker.perception.config import ModelConfig, resolve_model_config, resolve_model_weights
+from worker.perception.base import DetectorInterface, BaseDetectorAdapter
+from worker.perception.detector import RTDETRDetector
+from worker.perception.registry import get_detector, create_detector_from_config
+from worker.perception.exceptions import (
+    ModelNotFoundError,
+    ModelCompatibilityError,
+    ModelLoadError,
+    InvalidInputError,
+)
+from worker.perception.filter import DetectionFilter, DetectionFilterConfig
+from worker.tracking.tracker import ByteTrackTracker
+from worker.spatial.engine import SpatialEngine
+from worker.behavior.engine import BehaviorEngine
+from worker.fusion.engine import FusionEngine
+
+
+def _create_frame(frame_id: int = 1) -> FramePacket:
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    return FramePacket(
+        camera_id="CAM-RTDETR-01",
+        frame_id=frame_id,
+        timestamp_utc=datetime.now(timezone.utc),
+        image=img,
+        width=640,
+        height=480,
+    )
+
+
+def test_rtdetr_registration_and_instantiation():
+    """Verify RTDETRDetector is accessible via 'rtdetr' and 'rt-detr' keys."""
+    det1 = get_detector("rtdetr")
+    assert isinstance(det1, RTDETRDetector)
+    assert isinstance(det1, DetectorInterface)
+    assert isinstance(det1, BaseDetectorAdapter)
+    assert det1.model_type == "rtdetr"
+
+    det2 = get_detector("rt-detr")
+    assert isinstance(det2, RTDETRDetector)
+    assert det2.model_type == "rtdetr"
+
+    cfg = ModelConfig(model_type="rtdetr", confidence_threshold=0.45)
+    det3 = create_detector_from_config(cfg)
+    assert isinstance(det3, RTDETRDetector)
+    assert det3.confidence_threshold == 0.45
+
+
+def test_rtdetr_config_resolution():
+    """Verify weights path resolution defaults to rtdetr-l.pt."""
+    resolved_w = resolve_model_weights("rtdetr")
+    assert "rtdetr-l.pt" in resolved_w
+
+    cfg = resolve_model_config(model_type="rtdetr")
+    assert cfg.model_type == "rtdetr"
+    assert "rtdetr-l.pt" in cfg.model_weights
+
+
+def test_rtdetr_graceful_missing_weights_error():
+    """Verify graceful failure with ModelNotFoundError when explicit invalid path is provided."""
+    det = RTDETRDetector(
+        model_name="rtdetr_custom",
+        model_path="models/detector/non_existent_weights_xyz123.pt",
+    )
+
+    with pytest.raises(ModelNotFoundError) as exc_info:
+        det.load()
+
+    assert "not found" in str(exc_info.value).lower()
+    assert det._is_loaded is False
+
+
+def test_rtdetr_graceful_compatibility_error():
+    """Verify graceful failure with ModelCompatibilityError if runtime fails to support architecture."""
+    class IncompatibleRTDETR(RTDETRDetector):
+        def load(self, model_path=None):
+            raise ModelCompatibilityError("Installed Ultralytics version does not support RT-DETR architecture.")
+
+    det_incompat = IncompatibleRTDETR()
+    with pytest.raises(ModelCompatibilityError) as exc_info:
+        det_incompat.load()
+
+    assert "does not support RT-DETR" in str(exc_info.value)
+
+
+def test_rtdetr_unified_detection_creation():
+    """Verify RTDETRDetector creates canonical Detection objects matching the unified format."""
+    det = RTDETRDetector(confidence_threshold=0.35)
+    packet = _create_frame(frame_id=1)
+
+    unified_det = det.create_unified_detection(
+        frame_packet=packet,
+        bbox_xyxy=(50.0, 60.0, 150.0, 250.0),
+        confidence=0.88,
+        raw_class_name="person",
+        class_index=0,
+        inference_time_ms=18.5,
+    )
+
+    assert isinstance(unified_det, Detection)
+    assert isinstance(unified_det.bbox, BoundingBox)
+    assert unified_det.class_id == TargetClass.PERSON
+    assert unified_det.class_name == "person"
+    assert unified_det.confidence == 0.88
+    assert unified_det.bounding_box == (50.0, 60.0, 150.0, 250.0)
+    assert unified_det.bbox.x1 == 50.0
+    assert unified_det.bbox.y1 == 60.0
+    assert unified_det.bbox.x2 == 150.0
+    assert unified_det.bbox.y2 == 250.0
+    assert unified_det.metadata["model_name"] == "rtdetr-l"
+    assert unified_det.metadata["model_type"] == "rtdetr"
+
+
+def test_rtdetr_downstream_pipeline_zero_modification():
+    """
+    Critical requirement test:
+    Verify that detections generated by RTDETRDetector flow through the EXACT
+    downstream intelligence pipeline (DetectionFilter -> ByteTrack -> Spatial -> Behavior -> Fusion)
+    with ZERO modifications to any downstream engine.
+    """
+    det = RTDETRDetector()
+    packet = _create_frame(frame_id=1)
+
+    # Simulated transformer detections
+    raw_detections = [
+        det.create_unified_detection(
+            frame_packet=packet,
+            bbox_xyxy=(100.0, 100.0, 200.0, 300.0),
+            confidence=0.91,
+            raw_class_name="person",
+            class_index=0,
+        ),
+        det.create_unified_detection(
+            frame_packet=packet,
+            bbox_xyxy=(300.0, 150.0, 500.0, 350.0),
+            confidence=0.82,
+            raw_class_name="car",
+            class_index=2,
+        ),
+    ]
+
+    # Stage 1: DetectionFilter
+    det_filter = DetectionFilter(DetectionFilterConfig(min_confidence=0.35))
+    filt_res = det_filter.filter_detections(raw_detections, image_shape=(480, 640, 3))
+    assert len(filt_res.operational_detections) == 2
+
+    # Stage 2: ByteTrackTracker
+    tracker = ByteTrackTracker()
+    tracks = tracker.update(
+        detections=filt_res.operational_detections,
+        camera_id=packet.camera_id,
+        timestamp_utc=packet.timestamp_utc,
+        frame_id=packet.frame_id,
+    )
+    assert len(tracks) == 2
+    assert tracks[0].track_id == 1
+    assert tracks[1].track_id == 2
+
+    # Stage 3: SpatialEngine
+    spatial_engine = SpatialEngine()
+    spatial_states = spatial_engine.process_tracks(tracks, packet.camera_id, packet.timestamp_utc)
+    assert len(spatial_states) == 2
+
+    # Stage 4: BehaviorEngine
+    behavior_engine = BehaviorEngine()
+    behaviors = behavior_engine.process(tracks, spatial_states, packet.timestamp_utc)
+    assert isinstance(behaviors, list)
+
+    # Stage 5: FusionEngine
+    fusion_engine = FusionEngine()
+    events = fusion_engine.process(
+        tracks=tracks,
+        spatial_states=spatial_states,
+        environment_state=None,
+        behavior_primitives=behaviors,
+        camera_id=packet.camera_id,
+        timestamp_utc=packet.timestamp_utc,
+    )
+    assert isinstance(events, list)

@@ -63,8 +63,12 @@ class BehaviorType(str, Enum):
     LOITERING = "loitering"
     PERSISTENT_APPROACH = "persistent_approach"
     RESTRICTED_ENTRY = "restricted_entry"
+    RESTRICTED_OCCUPANCY = "restricted_occupancy"
     FENCE_CROSSED = "fence_crossed"
+    FENCE_BREACH = "fence_breach"
+    BORDER_CROSSING = "border_crossing"
     REPEATED_APPROACH = "repeated_approach"
+    SPEED_ANOMALY = "speed_anomaly"
     UNKNOWN = "unknown"
 
 

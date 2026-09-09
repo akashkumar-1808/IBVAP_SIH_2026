@@ -60,6 +60,7 @@ class PipelineConfig(BaseModel):
     max_runtime_seconds: Optional[float] = None
     status_interval_seconds: float = 1.0
     queue_max_size: int = 30
+    detector_type: str = "yolov8"
     model_path: str = "yolov8n.pt"
     device: str = "cpu"
     detection_confidence: float = 0.40

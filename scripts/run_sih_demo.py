@@ -151,12 +151,31 @@ def main():
         help="Inference device: 'cpu' or 'cuda'",
     )
     parser.add_argument(
+        "--detector", "--model",
+        type=str,
+        default=os.getenv("MODEL_TYPE", "yolov8"),
+        choices=["yolov8", "yolo11", "yolo26", "yolo26-pose", "rt-detr"],
+        help="Perception model family to load ('yolov8', 'yolo11', 'yolo26', 'yolo26-pose', 'rt-detr')",
+    )
+    parser.add_argument(
+        "--weights",
+        type=str,
+        default=os.getenv("MODEL_WEIGHTS", None),
+        help="Optional path to custom model weights file",
+    )
+    parser.add_argument(
         "--no-browser",
         action="store_true",
         help="Do not open the browser automatically",
     )
 
     args = parser.parse_args()
+
+    # Configure perception model selection in environment
+    if args.detector:
+        os.environ["MODEL_TYPE"] = args.detector
+    if args.weights:
+        os.environ["MODEL_WEIGHTS"] = args.weights
 
     # 1. Validate Video Path
     video_path = Path(args.video)
@@ -191,6 +210,7 @@ def main():
     print(f"Input MP4 Video:      {video_path}")
     print(f"Server Address:       http://{args.host}:{target_port}")
     print(f"Operator Console:     http://localhost:{target_port}/console")
+    print(f"Perception Model:     {args.detector.upper()}")
     print(f"Inference Device:     {args.device.upper()}")
     print("=" * 75)
 

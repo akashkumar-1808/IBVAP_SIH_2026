@@ -19,7 +19,11 @@ class Settings(BaseSettings):
     DEMO_VIDEO_PATH: str = Field(default="storage/samples/test_video.mp4", description="Path to production demo MP4 video")
     DEFAULT_CAMERA_ID: str = Field(default="DEMO-CAM-01", description="Default camera ID for single-camera deployment")
     DEFAULT_DEVICE: str = Field(default="cpu", description="Compute device: cpu or cuda")
-    YOLO_MODEL_PATH: str = Field(default="models/detector/yolov8n.pt", description="Path to YOLO weights file")
+    MODEL_TYPE: str = Field(default="yolov8", description="Detector model family: yolov8, yolo11, yolo26, rtdetr, mock")
+    MODEL_WEIGHTS: Optional[str] = Field(default=None, description="Path to model weights file")
+    CONFIDENCE_THRESHOLD: float = Field(default=0.35, description="Detector confidence threshold")
+    IOU_THRESHOLD: float = Field(default=0.45, description="Detector NMS IOU threshold")
+    YOLO_MODEL_PATH: str = Field(default="models/detector/yolov8n.pt", description="Legacy path to YOLO weights file")
     AUTO_START_DEMO_PIPELINE: bool = Field(default=False, description="Auto-start live demo pipeline on server startup")
 
     # Supabase credentials & endpoints (Sensitive)

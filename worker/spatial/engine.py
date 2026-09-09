@@ -55,7 +55,7 @@ from .calibration import (
     TerrainModeNotImplementedError,
 )
 from .ground_contact import estimate_ground_contact, image_to_world_ground
-from .border_logic import determine_side, check_crossing, CrossingConfirmation
+from .border_logic import determine_side, check_crossing, CrossingConfirmation, _signed_distance_to_polyline
 from .exceptions import InvalidGeometryError, ConfigurationError
 from ..tracking.schemas import TrackState
 
@@ -330,12 +330,19 @@ class SpatialEngine(SpatialEngineInterface):
             best_side = BorderSide.UNKNOWN
             best_crossing_status = CrossingStatus.NONE
             crossing_event: Optional[CrossingEvent] = None
+            border_distance_m: Optional[float] = None
 
             for section_id in reg.visible_border_sections:
                 section = self._border_sections.get(section_id)
                 if section is None or world_pt is None:
                     continue
 
+                signed_dist = _signed_distance_to_polyline(
+                    (world_pt.x, world_pt.y),
+                    section.points,
+                    section.permitted_side_normal,
+                )
+                border_distance_m = round(abs(signed_dist), 2)
                 side = determine_side((world_pt.x, world_pt.y), section)
                 best_side = side  # Use last visible section (typically one)
 
@@ -394,12 +401,14 @@ class SpatialEngine(SpatialEngineInterface):
                 metadata={
                     "total_fences_crossed": list(tracker_mem.fences_crossed_history),
                     "mode": "world_border",
+                    "border_distance_m": border_distance_m,
                 },
                 border_side=best_side,
                 crossing_status=best_crossing_status,
                 ground_contact=gc,
                 calibration_version=cal.calibration_version,
                 spatial_confidence=confidence,
+                border_distance_m=border_distance_m,
             )
 
             tracker_mem.previous_zone_id = current_zone_id

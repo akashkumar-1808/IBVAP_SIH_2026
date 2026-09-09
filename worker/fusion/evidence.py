@@ -323,12 +323,36 @@ class EvidenceExtractor:
                     evidence_type=EvidenceType.BEHAVIOR_PRIMITIVE,
                     source_module="behavior",
                     value=b.behavior_type.value,
-                    confidence=0.80,
+                    confidence=getattr(b, "confidence", 0.80),
                     reason_code=FusionReasonCode.LOITERING_DETECTED,
                     timestamp_utc=timestamp_utc,
                     track_id=track.track_id,
                     camera_id=camera_id,
-                    metadata={"duration": b.duration_seconds},
+                    metadata={"duration": b.duration_seconds, "triggering_condition": getattr(b, "triggering_condition", None)},
+                ))
+            elif b.behavior_type == BehaviorType.BORDER_CROSSING:
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.BEHAVIOR_PRIMITIVE,
+                    source_module="behavior",
+                    value=b.behavior_type.value,
+                    confidence=getattr(b, "confidence", 0.98),
+                    reason_code=FusionReasonCode.BORDER_CROSSED,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                    metadata={"duration": b.duration_seconds, "triggering_condition": getattr(b, "triggering_condition", None)},
+                ))
+            elif b.behavior_type == BehaviorType.SPEED_ANOMALY:
+                evidence_list.append(EvidenceItem(
+                    evidence_type=EvidenceType.BEHAVIOR_PRIMITIVE,
+                    source_module="behavior",
+                    value=b.behavior_type.value,
+                    confidence=getattr(b, "confidence", 0.85),
+                    reason_code=FusionReasonCode.HIGH_SPEED_MOVEMENT,
+                    timestamp_utc=timestamp_utc,
+                    track_id=track.track_id,
+                    camera_id=camera_id,
+                    metadata={"duration": b.duration_seconds, "triggering_condition": getattr(b, "triggering_condition", None)},
                 ))
 
         # -------------------------------------------------------------

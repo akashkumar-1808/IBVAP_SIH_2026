@@ -437,21 +437,14 @@ def _build_on_frame_callback(cam_id: str, rtsp_url: Optional[str], sector_id: st
     return on_frame_callback
 
 
-def _resolve_model_path() -> str:
-    """Resolves YOLOv8n model weights to an absolute filesystem path."""
+def _resolve_model_path(model_type: Optional[str] = None, explicit_weights: Optional[str] = None) -> str:
+    """Resolves model weights to an absolute filesystem path across families (YOLOv8, YOLO11, YOLO26)."""
     from ...config import settings
-    repo_root = settings.repo_root
-    candidates = [
-        repo_root / settings.YOLO_MODEL_PATH,
-        repo_root / "models" / "detector" / "yolov8n.pt",
-        repo_root / "yolov8n.pt",
-        Path("models/detector/yolov8n.pt").resolve(),
-        Path("yolov8n.pt").resolve(),
-    ]
-    for cand in candidates:
-        if cand.exists() and cand.is_file():
-            return str(cand.resolve())
-    return "yolov8n.pt"
+    from worker.perception.config import resolve_model_weights
+    m_type = model_type or getattr(settings, "MODEL_TYPE", "yolov8") or "yolov8"
+    weights = explicit_weights or getattr(settings, "MODEL_WEIGHTS", None) or settings.YOLO_MODEL_PATH
+    return resolve_model_weights(m_type, weights)
+
 
 
 def _resolve_video_path(raw_path: str) -> Optional[Path]:
@@ -535,7 +528,9 @@ def _run_analysis_background(
             file_path=video_file_path,
             run_mode=RunMode.HEADLESS,
             device=device,
+            detector_type=getattr(settings, "MODEL_TYPE", "yolov8") or "yolov8",
             model_path=resolved_model_path,
+            detection_confidence=getattr(settings, "CONFIDENCE_THRESHOLD", 0.35),
             evidence_storage_dir=evidence_dir,
             record_output_dir=runs_dir,
             status_interval_seconds=5.0,
@@ -572,7 +567,8 @@ def _run_analysis_background(
             logger.info(f"[RUN_ANALYSIS] warmup_start +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
             orchestrator.detector.warmup()
             logger.info(f"[RUN_ANALYSIS] warmup_complete +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")
-        logger.info(f"[YOLO_READY] YOLOv8n detector loaded from '{resolved_model_path}' and warmed up on device '{device}'")
+        det_name = getattr(orchestrator.detector, "model_name", "Detector")
+        logger.info(f"[DETECTOR_READY] {det_name} detector loaded from '{resolved_model_path}' and warmed up on device '{device}'")
 
         # F. First inference & initial visualization frame
         logger.info(f"[RUN_ANALYSIS] inference_start +{(time.perf_counter() - t_bg_start)*1000.0:.1f}ms")

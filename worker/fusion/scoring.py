@@ -101,7 +101,7 @@ def calculate_risk_score(
             has_behavior_evidence = True
             reason_codes.append(ev.reason_code)
 
-            if ev.reason_code == FusionReasonCode.FENCE_BREACH_DETECTED:
+            if ev.reason_code in (FusionReasonCode.FENCE_BREACH_DETECTED, FusionReasonCode.BORDER_CROSSED):
                 behavior_score = max(behavior_score, config.behavior_score_fence_breach)
             elif ev.reason_code == FusionReasonCode.RESTRICTED_OCCUPANCY:
                 behavior_score = max(behavior_score, config.behavior_score_restricted_occupancy)
@@ -111,6 +111,8 @@ def calculate_risk_score(
                 behavior_score = max(behavior_score, config.behavior_score_persistent_approach)
             elif ev.reason_code == FusionReasonCode.LOITERING_DETECTED:
                 behavior_score = max(behavior_score, config.behavior_score_loitering)
+            elif ev.reason_code == FusionReasonCode.HIGH_SPEED_MOVEMENT:
+                behavior_score = max(behavior_score, config.behavior_score_speed_anomaly)
 
     if not has_behavior_evidence:
         behavior_score = 0.0

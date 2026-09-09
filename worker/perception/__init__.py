@@ -1,6 +1,21 @@
-from .base import DetectorInterface
+from .base import DetectorInterface, BaseDetectorAdapter
 from .schemas import Detection, BoundingBox, TargetClass, COCO_CLASS_MAP, map_raw_class_to_target
-from .detector import ObjectDetector
+from .config import ModelConfig, resolve_model_config, resolve_model_weights
+from .detector import (
+    ObjectDetector,
+    YOLOBaseAdapter,
+    YOLOv8Detector,
+    YOLO11Detector,
+    YOLO26Detector,
+    RTDETRDetector,
+    MockDetector,
+)
+from .registry import (
+    get_detector,
+    register_detector,
+    list_available_detectors,
+    create_detector_from_config,
+)
 from .visualizer import draw_detections
 from .filter import (
     DetectionFilter,
@@ -17,16 +32,31 @@ from .exceptions import (
     ModelInferenceError,
     InvalidInputError,
     UnsupportedDeviceError,
+    ModelCompatibilityError,
 )
 
 __all__ = [
     "DetectorInterface",
+    "BaseDetectorAdapter",
+    "ModelConfig",
+    "resolve_model_config",
+    "resolve_model_weights",
     "Detection",
     "BoundingBox",
     "TargetClass",
     "COCO_CLASS_MAP",
     "map_raw_class_to_target",
     "ObjectDetector",
+    "YOLOBaseAdapter",
+    "YOLOv8Detector",
+    "YOLO11Detector",
+    "YOLO26Detector",
+    "RTDETRDetector",
+    "MockDetector",
+    "get_detector",
+    "register_detector",
+    "list_available_detectors",
+    "create_detector_from_config",
     "draw_detections",
     "DetectionFilter",
     "DetectionFilterConfig",
@@ -40,4 +70,5 @@ __all__ = [
     "ModelInferenceError",
     "InvalidInputError",
     "UnsupportedDeviceError",
+    "ModelCompatibilityError",
 ]

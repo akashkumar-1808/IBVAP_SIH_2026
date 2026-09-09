@@ -20,6 +20,8 @@ services:
         value: DEMO-CAM-01
       - key: DEFAULT_DEVICE
         value: cpu
+      - key: MODEL_TYPE
+        value: yolov8
       - key: YOLO_MODEL_PATH
         value: models/detector/yolov8n.pt
       - key: STORAGE_ROOT

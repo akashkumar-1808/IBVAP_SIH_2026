@@ -27,6 +27,7 @@ class EventType(str, Enum):
     REPEATED_APPROACH = "repeated_approach"
     RESTRICTED_OCCUPANCY = "restricted_occupancy"
     FENCE_BREACH = "fence_breach"
+    SPEED_ANOMALY = "speed_anomaly"
     OBJECT_OBSERVED = "object_observed"
     # Operational Stream Health & Continuity Events
     STREAM_INTERRUPTION = "stream_interruption"
@@ -42,6 +43,7 @@ class EventStatus(str, Enum):
     CONFIRMED = "confirmed"
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
+
 
 
 class FusionReasonCode(str, Enum):
@@ -117,11 +119,13 @@ class FusionConfig(BaseModel):
     spatial_score_safe: float = Field(default=0.1, ge=0.0, le=1.0)
 
     # Behavior severity scores [0, 1]
+    behavior_score_border_crossing: float = Field(default=1.0, ge=0.0, le=1.0)
     behavior_score_fence_breach: float = Field(default=1.0, ge=0.0, le=1.0)
     behavior_score_restricted_occupancy: float = Field(default=0.9, ge=0.0, le=1.0)
     behavior_score_repeated_approach: float = Field(default=0.85, ge=0.0, le=1.0)
     behavior_score_persistent_approach: float = Field(default=0.75, ge=0.0, le=1.0)
     behavior_score_loitering: float = Field(default=0.60, ge=0.0, le=1.0)
+    behavior_score_speed_anomaly: float = Field(default=0.70, ge=0.0, le=1.0)
 
     # Priority thresholds [0, 100]
     threshold_info_max: float = Field(default=30.0, ge=0.0, le=100.0)

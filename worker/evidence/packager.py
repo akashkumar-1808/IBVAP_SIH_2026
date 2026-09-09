@@ -10,7 +10,7 @@ Architecture Decision: DEC-0008
 
 import os
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timezone, timedelta
 import numpy as np
 
@@ -80,6 +80,7 @@ class EvidencePackager(EvidencePackagerInterface):
         spatial_config: Optional[CameraSpatialConfig] = None,
         current_frame: Optional[np.ndarray] = None,
         force_repackage: bool = False,
+        detector_metadata: Optional[Dict[str, Any]] = None,
     ) -> EvidencePackage:
         """
         Builds, seals, and persists a complete Evidence Package for an EventRecord.
@@ -198,8 +199,11 @@ class EvidencePackager(EvidencePackagerInterface):
             artifact_checksums.append(EvidenceHasher.create_artifact_checksum(incident_clip_path, "video/mp4"))
 
         # 7. Model Versions & Traceability
+        detector_name = "YOLOv8n-v1"
+        if detector_metadata:
+            detector_name = detector_metadata.get("model_name", detector_name)
         model_versions = {
-            "detector": "YOLOv8n-v1",
+            "detector": detector_name,
             "tracker": "ByteTrack-v1",
             "environment": "Env-v1",
             "spatial": "WorldBorder-v1",

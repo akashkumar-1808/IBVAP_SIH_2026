@@ -38,7 +38,16 @@ from worker.ingestion import (
     mask_rtsp_url,
 )
 from worker.environment import EnvironmentAnalyzer, EnvironmentConfig, EnvironmentState
-from worker.perception import ObjectDetector, Detection, DetectionFilter, DetectionFilterConfig, CameraMotionEstimator, CameraMotionInfo
+from worker.perception import (
+    ObjectDetector,
+    Detection,
+    DetectionFilter,
+    DetectionFilterConfig,
+    CameraMotionEstimator,
+    CameraMotionInfo,
+    get_detector,
+    DetectorInterface,
+)
 from worker.tracking import ByteTrackTracker, TrackState
 from worker.spatial import (
     SpatialEngine,
@@ -80,7 +89,13 @@ class LivePipelineOrchestrator:
         self.source: Optional[VideoSource] = None
         self.queue = BoundedFrameQueue(max_size=min(3, config.queue_max_size))
         self.environment_analyzer = EnvironmentAnalyzer()
-        self.detector = ObjectDetector(model_path=config.model_path, device=config.device, confidence_threshold=config.detection_confidence)
+        det_type = getattr(config, "detector_type", "yolov8") or "yolov8"
+        self.detector: DetectorInterface = get_detector(
+            detector_type=det_type,
+            model_path=config.model_path,
+            device=config.device,
+            confidence_threshold=config.detection_confidence,
+        )
         self.detection_filter = DetectionFilter(DetectionFilterConfig(min_confidence=config.detection_confidence))
         self.camera_motion_estimator = CameraMotionEstimator()
         self._latest_raw_detections_count = 0
@@ -411,7 +426,9 @@ class LivePipelineOrchestrator:
                         frame_snapshot = img.copy()
                         active_borders = [self._latest_projected_border] if self._latest_projected_border else None
 
-                        def _async_package(e_copy, tr_copy, sp_copy, kf_image, borders):
+                        det_meta = self.detector.get_metadata() if hasattr(self.detector, "get_metadata") else None
+
+                        def _async_package(e_copy, tr_copy, sp_copy, kf_image, borders, d_meta):
                             try:
                                 pkg = self.evidence_packager.create_package(
                                     event=e_copy,
@@ -419,6 +436,7 @@ class LivePipelineOrchestrator:
                                     spatial_state=sp_copy,
                                     projected_borders=borders,
                                     current_frame=kf_image,
+                                    detector_metadata=d_meta,
                                 )
                                 self.metrics.total_evidence_packages += 1
                                 seal_preview = pkg.sha256_seal[:16] if pkg.sha256_seal else "sealed"
@@ -428,7 +446,7 @@ class LivePipelineOrchestrator:
 
                         pkg_thread = threading.Thread(
                             target=_async_package,
-                            args=(ev, matching_tr, matching_sp, frame_snapshot, active_borders),
+                            args=(ev, matching_tr, matching_sp, frame_snapshot, active_borders, det_meta),
                             daemon=True,
                         )
                         pkg_thread.start()

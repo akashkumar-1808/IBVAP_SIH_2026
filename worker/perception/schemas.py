@@ -1,6 +1,13 @@
 from typing import Dict, Any, Optional
 from backend.app.schemas.common import TargetClass
-from backend.app.schemas.events import BoundingBox, Detection
+from backend.app.schemas.events import (
+    BoundingBox,
+    Detection,
+    PoseKeypoint,
+    HumanPose,
+    COCO_POSE_KEYPOINTS,
+    SKELETON_CONNECTIONS,
+)
 
 # Mapping from standard COCO class names to normalized IBVAP TargetClass
 COCO_CLASS_MAP: Dict[str, TargetClass] = {
@@ -32,4 +39,14 @@ def map_raw_class_to_target(raw_class_name: str) -> TargetClass:
     return COCO_CLASS_MAP.get(clean_name, TargetClass.UNKNOWN)
 
 
-__all__ = ["BoundingBox", "Detection", "TargetClass", "COCO_CLASS_MAP", "map_raw_class_to_target"]
+__all__ = [
+    "BoundingBox",
+    "Detection",
+    "TargetClass",
+    "COCO_CLASS_MAP",
+    "map_raw_class_to_target",
+    "PoseKeypoint",
+    "HumanPose",
+    "COCO_POSE_KEYPOINTS",
+    "SKELETON_CONNECTIONS",
+]

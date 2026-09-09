@@ -49,6 +49,7 @@ class SpatialState(BaseModel):
     ground_contact: Optional[GroundContactPoint] = None
     calibration_version: Optional[str] = None
     spatial_confidence: SpatialConfidence = SpatialConfidence.VALID
+    border_distance_m: Optional[float] = None
 
 
 __all__ = [

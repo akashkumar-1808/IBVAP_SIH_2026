@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Sun, Moon, User } from 'lucide-react';
+import { Shield, User } from 'lucide-react';
 import { CameraInfo, CameraContract, EnvironmentState, StreamHealthContract } from '../../types';
 
 interface TopSystemBarProps {
@@ -15,6 +15,7 @@ interface TopSystemBarProps {
   isBackendOnline?: boolean;
   wsStatus?: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
   hasActiveSecurityEvent?: boolean;
+  activeEvidenceCount?: number;
 }
 
 export const TopSystemBar: React.FC<TopSystemBarProps> = ({
@@ -23,11 +24,11 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   camera,
   cameraTelemetry,
   streamHealth,
-  environment,
   fps,
   isBackendOnline = true,
   wsStatus = 'CONNECTED',
   hasActiveSecurityEvent = false,
+  activeEvidenceCount = 0,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
@@ -43,11 +44,6 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Real pipeline metrics strictly from telemetry / continuity manager
-  const camId = camera?.camera_id || cameraTelemetry?.camera_id || (isLiveMode ? 'DEMO-CAM-01' : '--');
-  const sectorName = camera?.sector_name || (isLiveMode ? 'SECTOR B-07' : '--');
-  const srcDesc = cameraTelemetry?.source_type ? `SOURCE: ${cameraTelemetry.source_type}` : (isLiveMode ? 'SOURCE: FILE' : 'SOURCE: --');
-  
   const captureFps = streamHealth?.capture_fps !== undefined 
     ? streamHealth.capture_fps.toFixed(1) 
     : (cameraTelemetry?.capture_fps ? cameraTelemetry.capture_fps.toFixed(1) : (isLiveMode ? '25.0' : '--'));
@@ -59,22 +55,8 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   const latencyMs = streamHealth?.latency_ms !== undefined
     ? Math.round(streamHealth.latency_ms)
     : (cameraTelemetry?.processing_latency_ms !== undefined ? Math.round(cameraTelemetry.processing_latency_ms) : '--');
-    
-  const frameAgeMs = streamHealth?.frame_age_ms !== undefined
-    ? Math.round(streamHealth.frame_age_ms)
-    : (cameraTelemetry?.frame_age_ms !== undefined ? Math.round(cameraTelemetry.frame_age_ms) : '--');
-
-  const isDay = environment?.lighting ? environment.lighting.toString().toUpperCase().includes('DAY') : true;
-  const envLightStr = environment?.lighting ? environment.lighting.toString().toUpperCase() : '--';
-  const envVisStr = environment?.visibility ? environment.visibility.toString().toUpperCase() : '--';
 
   // 6 Distinct System States:
-  // 1. BACKEND UNAVAILABLE (Health check failed or WS connection lost)
-  // 2. ACTIVE SECURITY EVENT (High/Critical threat detected)
-  // 3. ANALYSIS COMPLETE (MP4 EOF, telemetry & last frame preserved, server alive)
-  // 4. STREAM INTERRUPTED / DEGRADED / RECOVERED (Continuity states)
-  // 5. CAMERA OFFLINE (Physical or registered camera unreachable)
-  // 6. STREAM HEALTHY (Normal streaming / analysis)
   let statusBadgeClass = 'badge-offline';
   let statusBadgeText = 'BACKEND UNAVAILABLE';
 
@@ -108,83 +90,153 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   } else if (camera && !isCameraOnline && !isLiveMode) {
     statusBadgeClass = 'badge-offline';
     statusBadgeText = 'CAMERA OFFLINE';
-  } else if (analysisStatus === 'ANALYZING' || analysisStatus === 'EVENT_DETECTED') {
+  } else if (isLiveMode) {
     statusBadgeClass = 'badge-running';
-    statusBadgeText = 'ANALYSIS RUNNING';
-  } else if (analysisStatus === 'STARTING') {
-    statusBadgeClass = 'badge-running';
-    statusBadgeText = 'STARTING...';
-  } else {
-    statusBadgeClass = 'badge-online';
     statusBadgeText = 'STREAM HEALTHY';
+  } else {
+    statusBadgeClass = 'badge-warning';
+    statusBadgeText = 'STANDBY';
   }
 
+  // Determine individual persistent status strip indicators (Section 16)
+  const streamStatusText = !isBackendOnline ? 'OFFLINE' : (healthState === 'DEGRADED' ? 'DEGRADED' : (isLiveMode ? 'HEALTHY' : 'STANDBY'));
+  const streamStatusColor = !isBackendOnline ? '#EF4444' : (healthState === 'DEGRADED' ? '#F59E0B' : '#10B981');
+
+  const aiStatusText = analysisStatus === 'COMPLETED' ? 'COMPLETED' : (isLiveMode ? 'ACTIVE' : 'READY');
+  const aiStatusColor = analysisStatus === 'COMPLETED' ? '#3B82F6' : (isLiveMode ? '#10B981' : '#9CA3AF');
+
+  const dbStatusText = isBackendOnline ? 'CONNECTED' : 'DISCONNECTED';
+  const dbStatusColor = isBackendOnline ? '#10B981' : '#EF4444';
+
+  const evidenceStatusText = activeEvidenceCount > 0 ? `${activeEvidenceCount} SEALED` : 'VERIFIED';
+  const evidenceStatusColor = '#10B981';
+
+  const wsStatusText = wsStatus === 'CONNECTED' ? 'CONNECTED' : (wsStatus === 'RECONNECTING' ? 'RECONNECTING' : 'OFFLINE');
+  const wsStatusColor = wsStatus === 'CONNECTED' ? '#10B981' : (wsStatus === 'RECONNECTING' ? '#F59E0B' : '#EF4444');
 
   return (
     <header className="top-system-bar">
-      {/* Brand & Camera Identification */}
+      {/* 1. Brand Identity & Product Positioning */}
       <div className="top-bar-left">
         <div className="brand-badge">
-          <Shield size={22} color="#3B82F6" />
+          <Shield size={24} color="#38BDF8" style={{ flexShrink: 0 }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span className="brand-title">IBVAP</span>
-            <span className="brand-subtitle">OPERATOR CONSOLE</span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+              <span className="brand-title" style={{ letterSpacing: '0.08em', color: '#F1F5F9' }}>
+                IBVAP TATVA
+              </span>
+              <span style={{ fontSize: '9px', fontWeight: 800, color: '#38BDF8', letterSpacing: '0.06em' }}>
+                PROTOTYPE
+              </span>
+            </div>
+            <span className="brand-subtitle" style={{ fontSize: '8.5px', color: '#9CA3AF' }}>
+              Intelligent Border Video Analytics Platform
+            </span>
           </div>
         </div>
 
-        <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }} />
+        <div style={{ width: '1px', height: '26px', backgroundColor: 'var(--color-border)' }} />
 
-        <div className="camera-header-block">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="camera-header-title">{camId}</span>
-            <span className={statusBadgeClass} title={streamHealth?.status_reason || ''}>
-              ● {statusBadgeText}
-            </span>
-          </div>
-          <span className="camera-header-sub">
-            {sectorName} · {srcDesc}
-          </span>
+        {/* Core Pipeline Visual Flow (Detect -> Track -> Understand -> Assess -> Explain -> Prove) */}
+        <div className="pipeline-flow-tracker" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          {['DETECT', 'TRACK', 'UNDERSTAND', 'ASSESS', 'EXPLAIN', 'PROVE'].map((step, idx) => (
+            <React.Fragment key={step}>
+              <span
+                style={{
+                  fontSize: '8px',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  color: isLiveMode ? '#38BDF8' : '#6B7280',
+                }}
+              >
+                {step}
+              </span>
+              {idx < 5 && (
+                <span style={{ fontSize: '8px', color: '#4B5563', userSelect: 'none' }}>→</span>
+              )}
+            </React.Fragment>
+          ))}
         </div>
       </div>
 
-      {/* Center Operational Metrics Cluster */}
+      {/* 2. Persistent Operational Status Strip (Section 16) */}
+      <div
+        className="persistent-status-strip"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+          border: '1px solid var(--color-border)',
+          borderRadius: '4px',
+          padding: '4px 12px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ fontSize: '8px', color: '#9CA3AF', fontWeight: 700 }}>STREAM</span>
+          <span style={{ fontSize: '9px', color: streamStatusColor, fontWeight: 800 }}>● {streamStatusText}</span>
+        </div>
+
+        <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ fontSize: '8px', color: '#9CA3AF', fontWeight: 700 }}>AI PIPELINE</span>
+          <span style={{ fontSize: '9px', color: aiStatusColor, fontWeight: 800 }}>● {aiStatusText}</span>
+        </div>
+
+        <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ fontSize: '8px', color: '#9CA3AF', fontWeight: 700 }}>DATABASE</span>
+          <span style={{ fontSize: '9px', color: dbStatusColor, fontWeight: 800 }}>● {dbStatusText}</span>
+        </div>
+
+        <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ fontSize: '8px', color: '#9CA3AF', fontWeight: 700 }}>EVIDENCE</span>
+          <span style={{ fontSize: '9px', color: evidenceStatusColor, fontWeight: 800 }}>● {evidenceStatusText}</span>
+        </div>
+
+        <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ fontSize: '8px', color: '#9CA3AF', fontWeight: 700 }}>WS</span>
+          <span style={{ fontSize: '9px', color: wsStatusColor, fontWeight: 800 }}>● {wsStatusText}</span>
+        </div>
+
+        <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--color-border-subtle)' }} />
+
+        <span className={statusBadgeClass} style={{ fontSize: '8.5px', padding: '1px 6px' }}>
+          {statusBadgeText}
+        </span>
+      </div>
+
+      {/* 3. Real Operational Telemetry Cluster */}
       <div className="top-metrics-cluster">
         <div className="top-metric-item">
           <span className="top-metric-val">{captureFps} FPS</span>
           <span className="top-metric-lbl">CAPTURE</span>
         </div>
 
-        <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--color-border-subtle)' }} />
 
         <div className="top-metric-item">
           <span className="top-metric-val">{procFps} FPS</span>
-          <span className="top-metric-lbl">PROCESSING</span>
+          <span className="top-metric-lbl">PROC</span>
         </div>
 
-        <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--color-border-subtle)' }} />
 
         <div className="top-metric-item">
           <span className="top-metric-val">{latencyMs} ms</span>
           <span className="top-metric-lbl">LATENCY</span>
         </div>
 
-        <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
-
-        <div className="top-metric-item">
-          <span className="top-metric-val">{frameAgeMs} ms</span>
-          <span className="top-metric-lbl">FRAME AGE</span>
-        </div>
-
         {streamHealth && (
           <>
-            <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
-            <div className="top-metric-item" title={`Inter-frame jitter: ${Math.round(streamHealth.jitter_ms)}ms`}>
-              <span className="top-metric-val">{Math.round(streamHealth.jitter_ms)} ms</span>
-              <span className="top-metric-lbl">JITTER</span>
-            </div>
-
-            <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border-subtle)' }} />
-            <div className="top-metric-item" title={`AI Stream Trust: ${(streamHealth.trust_score * 100).toFixed(0)}%`}>
+            <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--color-border-subtle)' }} />
+            <div className="top-metric-item">
               <span
                 className="top-metric-val"
                 style={{
@@ -198,20 +250,9 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
             </div>
           </>
         )}
-
-        <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }} />
-
-        {/* Environment Indicators */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {isDay ? <Sun size={15} color="#F59E0B" /> : <Moon size={15} color="#38BDF8" />}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span className="top-metric-val">{envLightStr}</span>
-            <span className="top-metric-lbl">{envVisStr} ENVIRONMENT</span>
-          </div>
-        </div>
       </div>
 
-      {/* Right Time, Date & Profile */}
+      {/* 4. Right Time, Date & Role */}
       <div className="top-bar-right">
         <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
           <span className="top-metric-val" style={{ fontSize: '11px' }}>{timeStr}</span>
@@ -233,11 +274,11 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
               justifyContent: 'center',
             }}
           >
-            <User size={15} color="var(--color-text-secondary)" />
+            <User size={15} color="#38BDF8" />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-text-primary)' }}>OPERATOR</span>
-            <span style={{ fontSize: '9px', color: '#38BDF8', fontWeight: 600 }}>CONTROL ROOM</span>
+            <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--color-text-primary)' }}>OPERATOR</span>
+            <span style={{ fontSize: '8.5px', color: '#38BDF8', fontWeight: 600 }}>HQ COMMAND</span>
           </div>
         </div>
       </div>

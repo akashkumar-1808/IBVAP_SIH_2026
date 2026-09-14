@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TopSystemBar } from './components/layout/TopSystemBar';
-import { SidebarNav } from './components/layout/SidebarNav';
+import { SidebarNav, NavTab } from './components/layout/SidebarNav';
 import { BottomStatusBar } from './components/layout/BottomStatusBar';
-import { PrimaryVideoPanel } from './components/console/PrimaryVideoPanel';
-import { ActiveSecurityEventBanner } from './components/console/ActiveSecurityEventBanner';
-import { IntelligenceCards } from './components/console/IntelligenceCards';
-import { EventTimeline } from './components/console/EventTimeline';
-import { WhyThisEvent } from './components/console/WhyThisEvent';
-import { EvidencePackagePreview } from './components/console/EvidencePackagePreview';
 import { AddCameraModal } from './components/console/AddCameraModal';
 import { ForensicEvidenceModal } from './components/console/ForensicEvidenceModal';
+
+import { OverviewView } from './components/views/OverviewView';
+import { LiveSurveillanceView } from './components/views/LiveSurveillanceView';
+import { BorderIntelligenceView } from './components/views/BorderIntelligenceView';
+import { IncidentsView } from './components/views/IncidentsView';
+import { TargetTrackingView } from './components/views/TargetTrackingView';
+import { EvidenceAuditView } from './components/views/EvidenceAuditView';
+import { AiAnalyticsView } from './components/views/AiAnalyticsView';
+import { ReportsView } from './components/views/ReportsView';
 
 import {
   CameraInfo,
@@ -32,6 +35,9 @@ import {
 import { TelemetryWebSocket } from './services/websocket';
 
 export const App: React.FC = () => {
+  // 1. Operational Views Navigation State (Default to Overview - Section 5)
+  const [activeNav, setActiveNav] = useState<NavTab>('OVERVIEW');
+
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('DEMO-CAM-01');
   const [, setCalibration] = useState<CameraCalibration | null>(null);
@@ -77,8 +83,7 @@ export const App: React.FC = () => {
     };
   }, []);
 
-
-  // 1. Initial Load: Cameras & Events
+  // Initial Load: Cameras & Events
   useEffect(() => {
     fetchCameras()
       .then((cams) => {
@@ -100,7 +105,7 @@ export const App: React.FC = () => {
       .catch(() => {});
   }, []);
 
-  // 2. Load Calibration for selected camera
+  // Load Calibration for selected camera
   useEffect(() => {
     if (!selectedCameraId) {
       setCalibration(null);
@@ -114,7 +119,7 @@ export const App: React.FC = () => {
   // Track session ID to reset when a new analysis starts
   const currentSessionIdRef = useRef<string | null>(null);
 
-  // 3. Connect to Real-Time Telemetry WebSocket
+  // Connect to Real-Time Telemetry WebSocket
   const handleTelemetryPacket = useCallback((packet: TelemetryPacket) => {
     // Check if new analysis session began
     if (packet.session_id && currentSessionIdRef.current && packet.session_id !== currentSessionIdRef.current) {
@@ -173,7 +178,7 @@ export const App: React.FC = () => {
     return () => ws.disconnect();
   }, [handleTelemetryPacket]);
 
-  // 4. Automatically fetch evidence package whenever selectedEvent changes
+  // Automatically fetch evidence package whenever selectedEvent changes
   useEffect(() => {
     if (selectedEvent?.id) {
       fetchEventEvidence(selectedEvent.id)
@@ -197,7 +202,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // 5. Handle Camera Connection Callback
+  // Handle Camera Connection Callback
   const handleCameraConnected = (newCamera: CameraInfo) => {
     setCameras((prev) => {
       const idx = prev.findIndex((c) => c.camera_id === newCamera.camera_id);
@@ -211,7 +216,7 @@ export const App: React.FC = () => {
     setSelectedCameraId(newCamera.camera_id);
   };
 
-  // 6. Handle Camera Disconnect
+  // Handle Camera Disconnect
   const handleDisconnectCamera = async (camId: string) => {
     try {
       await disconnectCamera(camId);
@@ -225,7 +230,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // 7. Handle Event Acknowledge
+  // Handle Event Acknowledge
   const handleAcknowledge = async (eventId: string) => {
     try {
       await acknowledgeEvent(eventId, 'Operator');
@@ -244,7 +249,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-container">
-      {/* 1. Top Continuous Command System Bar */}
+      {/* 1. Top Continuous Command System Bar (Persistent Status Strip) */}
       <TopSystemBar
         isLiveMode={wsStatus === 'CONNECTED'}
         analysisStatus={telemetry.analysis_status}
@@ -257,82 +262,121 @@ export const App: React.FC = () => {
         isBackendOnline={isBackendOnline}
         wsStatus={wsStatus}
         hasActiveSecurityEvent={Boolean(activeAlertEvent)}
+        activeEvidenceCount={evidencePackage ? 1 : events.length}
       />
 
-      {/* 2. Main Dashboard Layout (Left Nav + Central Deck) */}
+      {/* 2. Main Dashboard Layout (Left Nav + Dynamic Central View Deck) */}
       <main className="dashboard-layout">
-        {/* Left Sidebar Navigation & Context */}
+        {/* Left Sidebar Navigation with 8 Primary Operational Views */}
         <SidebarNav
+          activeNav={activeNav}
+          onSelectNav={setActiveNav}
           cameras={cameras}
           selectedCameraId={selectedCameraId}
           onSelectCamera={setSelectedCameraId}
           onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
           onDisconnectCamera={handleDisconnectCamera}
           events={events}
+          activeTracksCount={telemetry.tracks.length}
+          evidenceCount={evidencePackage ? 1 : events.length}
+          isBackendOnline={isBackendOnline}
         />
 
-        {/* Central Operations Area */}
-        <section className="main-console-deck">
-          {/* Upper Deck: Live Video Feed (Left) + Active Security Event & 6-Card Intelligence Grid (Right) */}
-          <div className="upper-command-deck">
-            {/* Live Video Panel */}
-            <PrimaryVideoPanel
-              cameraId={selectedCameraId}
-              cameraName={selectedCam?.name || 'No Active Camera'}
-              fps={telemetry.fps}
-              environment={telemetry.environment}
-              tracks={telemetry.tracks}
-              spatialStates={telemetry.spatial_states}
-              behaviors={telemetry.behavior_primitives}
-              activeEvents={telemetry.active_events}
-              cameraTelemetry={telemetry.camera}
-              streamHealth={telemetry.stream_health}
-              analysisStatus={telemetry.analysis_status}
-              onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
-            />
-
-            {/* Right Deck: Active Alert Banner + 6 Intelligence Cards */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <ActiveSecurityEventBanner
-                event={activeAlertEvent}
-                onSelectEvent={handleSelectEvent}
-                onAcknowledge={handleAcknowledge}
-                onInspectEvidence={handleInspectEvidence}
-              />
-
-              <IntelligenceCards
-                environment={telemetry.environment}
-                tracks={telemetry.tracks}
-                selectedTrack={telemetry.tracks.length > 0 ? telemetry.tracks[0] : null}
-                spatialStates={telemetry.spatial_states}
-                behaviors={telemetry.behavior_primitives}
-                activeEvent={telemetry.active_events[0] || selectedEvent}
-              />
-            </div>
-          </div>
-
-          {/* Lower Operations Area: Event Timeline (Left) + Why This Event (Center) + Evidence Package (Right) */}
-          <div className="lower-operations-deck">
-            <EventTimeline
+        {/* Central Operations Deck Swapped by activeNav */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {activeNav === 'OVERVIEW' && (
+            <OverviewView
+              telemetry={telemetry}
               events={events}
-              selectedEvent={selectedEvent}
+              evidencePackage={evidencePackage}
+              camera={selectedCam || null}
+              isBackendOnline={isBackendOnline}
+              onNavigate={setActiveNav}
               onSelectEvent={handleSelectEvent}
               onInspectEvidence={handleInspectEvidence}
             />
+          )}
 
-            <WhyThisEvent
-              event={selectedEvent}
+          {activeNav === 'LIVE_SURVEILLANCE' && (
+            <LiveSurveillanceView
+              telemetry={telemetry}
+              selectedCameraId={selectedCameraId}
+              selectedCam={selectedCam}
+              activeAlertEvent={activeAlertEvent}
+              selectedEvent={selectedEvent}
+              events={events}
+              evidencePackage={evidencePackage}
+              onSelectEvent={handleSelectEvent}
+              onAcknowledge={handleAcknowledge}
+              onInspectEvidence={handleInspectEvidence}
+              onOpenAddCamera={() => setIsAddCameraModalOpen(true)}
+            />
+          )}
+
+          {activeNav === 'BORDER_INTELLIGENCE' && (
+            <BorderIntelligenceView
+              camera={selectedCam || null}
+              activeEvents={events}
+              activeTracks={telemetry.tracks}
+              streamHealth={telemetry.stream_health}
+              environment={telemetry.environment}
+              isBackendOnline={isBackendOnline}
+              onNavigate={setActiveNav}
+            />
+          )}
+
+          {activeNav === 'INCIDENTS' && (
+            <IncidentsView
+              events={events}
+              selectedEvent={selectedEvent}
+              evidencePackage={evidencePackage}
+              environment={telemetry.environment}
+              streamHealth={telemetry.stream_health}
+              onSelectEvent={handleSelectEvent}
               onAcknowledge={handleAcknowledge}
               onInspectEvidence={handleInspectEvidence}
             />
+          )}
 
-            <EvidencePackagePreview
-              evidencePackage={evidencePackage}
-              event={selectedEvent}
-              onInspectEvidence={handleInspectEvidence}
+          {activeNav === 'TARGET_TRACKING' && (
+            <TargetTrackingView
+              tracks={telemetry.tracks}
+              spatialStates={telemetry.spatial_states}
+              behaviors={telemetry.behavior_primitives}
+              camera={selectedCam || null}
+              fps={telemetry.fps}
             />
-          </div>
-        </section>
+          )}
+
+          {activeNav === 'EVIDENCE_AUDIT' && (
+            <EvidenceAuditView
+              events={events}
+              selectedEvent={selectedEvent}
+              evidencePackage={evidencePackage}
+              onSelectEvent={handleSelectEvent}
+              onInspectFullModal={handleInspectEvidence}
+            />
+          )}
+
+          {activeNav === 'AI_ANALYTICS' && (
+            <AiAnalyticsView
+              telemetry={telemetry}
+              events={events}
+              streamHealth={telemetry.stream_health}
+              environment={telemetry.environment}
+            />
+          )}
+
+          {activeNav === 'REPORTS' && (
+            <ReportsView
+              events={events}
+              camera={selectedCam || null}
+              streamHealth={telemetry.stream_health}
+              environment={telemetry.environment}
+              evidencePackage={evidencePackage}
+            />
+          )}
+        </div>
       </main>
 
       {/* 3. Bottom Operational Status Bar */}

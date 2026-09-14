@@ -879,3 +879,22 @@ body {
     gap: 4px;
   }
 }
+
+/* Operational SITREP Print Media Styles */
+@media print {
+  .top-system-bar,
+  .operator-sidebar,
+  .bottom-system-bar,
+  button {
+    display: none !important;
+  }
+  .dashboard-layout {
+    display: block !important;
+    padding: 0 !important;
+  }
+  .reports-workspace {
+    color: #000000 !important;
+    background: #FFFFFF !important;
+  }
+}
+

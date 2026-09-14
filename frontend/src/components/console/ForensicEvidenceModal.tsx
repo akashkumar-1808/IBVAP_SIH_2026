@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { EventRecord, EvidencePackage, EvidenceRecord } from '../../types';
 import { getEvidenceFileUrl, verifyEvidenceIntegrity, fetchEventEvidence } from '../../services/api';
+import { getApiUrl } from '../../config';
 
 interface ForensicEvidenceModalProps {
   isOpen: boolean;
@@ -95,7 +96,7 @@ export const ForensicEvidenceModal: React.FC<ForensicEvidenceModalProps> = ({
       return getEvidenceFileUrl(rec.id);
     }
     if (fallbackFileName) {
-      return `/storage/evidence/${event.camera_id}/${event.id}/${fallbackFileName}`;
+      return getApiUrl(`/storage/evidence/${event.camera_id}/${event.id}/${fallbackFileName}`);
     }
     return '';
   };

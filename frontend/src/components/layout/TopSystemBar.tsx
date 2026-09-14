@@ -12,6 +12,9 @@ interface TopSystemBarProps {
   environment?: EnvironmentState;
   fps: number;
   systemHealth: string;
+  isBackendOnline?: boolean;
+  wsStatus?: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
+  hasActiveSecurityEvent?: boolean;
 }
 
 export const TopSystemBar: React.FC<TopSystemBarProps> = ({
@@ -22,6 +25,9 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   streamHealth,
   environment,
   fps,
+  isBackendOnline = true,
+  wsStatus = 'CONNECTED',
+  hasActiveSecurityEvent = false,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
@@ -62,42 +68,57 @@ export const TopSystemBar: React.FC<TopSystemBarProps> = ({
   const envLightStr = environment?.lighting ? environment.lighting.toString().toUpperCase() : '--';
   const envVisStr = environment?.visibility ? environment.visibility.toString().toUpperCase() : '--';
 
-  // 8 Canonical states + lifecycle: HEALTHY, DEGRADED, INTERRUPTED, RECONNECTING, RECOVERED, STALE_FROZEN, OFFLINE, COMPLETED
+  // 6 Distinct System States:
+  // 1. BACKEND UNAVAILABLE (Health check failed or WS connection lost)
+  // 2. ACTIVE SECURITY EVENT (High/Critical threat detected)
+  // 3. ANALYSIS COMPLETE (MP4 EOF, telemetry & last frame preserved, server alive)
+  // 4. STREAM INTERRUPTED / DEGRADED / RECOVERED (Continuity states)
+  // 5. CAMERA OFFLINE (Physical or registered camera unreachable)
+  // 6. STREAM HEALTHY (Normal streaming / analysis)
   let statusBadgeClass = 'badge-offline';
-  let statusBadgeText = 'SERVER OFFLINE';
+  let statusBadgeText = 'BACKEND UNAVAILABLE';
 
   const healthState = streamHealth?.state;
+  const isCameraOnline = ((camera?.status || cameraTelemetry?.connection_status || '').toUpperCase() === 'ONLINE');
 
-  if (isLiveMode) {
-    if (analysisStatus === 'COMPLETED' || healthState === 'COMPLETED') {
-      statusBadgeClass = 'badge-completed';
-      statusBadgeText = 'ANALYSIS COMPLETE';
-    } else if (healthState === 'STALE_FROZEN') {
-      statusBadgeClass = 'badge-warning';
-      statusBadgeText = 'CAMERA FROZEN';
-    } else if (healthState === 'RECONNECTING') {
-      statusBadgeClass = 'badge-warning';
-      statusBadgeText = 'RECONNECTING...';
-    } else if (healthState === 'INTERRUPTED') {
-      statusBadgeClass = 'badge-offline';
-      statusBadgeText = 'STREAM INTERRUPTED';
-    } else if (healthState === 'RECOVERED') {
-      statusBadgeClass = 'badge-running';
-      statusBadgeText = 'STREAM RECOVERED';
-    } else if (healthState === 'DEGRADED') {
-      statusBadgeClass = 'badge-warning';
-      statusBadgeText = 'STREAM DEGRADED';
-    } else if (analysisStatus === 'ANALYZING' || analysisStatus === 'EVENT_DETECTED') {
-      statusBadgeClass = 'badge-running';
-      statusBadgeText = 'ANALYSIS RUNNING';
-    } else if (analysisStatus === 'STARTING') {
-      statusBadgeClass = 'badge-running';
-      statusBadgeText = 'STARTING...';
-    } else {
-      statusBadgeClass = 'badge-online';
-      statusBadgeText = 'STREAM HEALTHY';
-    }
+  if (!isBackendOnline) {
+    statusBadgeClass = 'badge-offline';
+    statusBadgeText = 'BACKEND UNAVAILABLE';
+  } else if (hasActiveSecurityEvent) {
+    statusBadgeClass = 'badge-offline';
+    statusBadgeText = 'ACTIVE SECURITY EVENT';
+  } else if (analysisStatus === 'COMPLETED' || healthState === 'COMPLETED') {
+    statusBadgeClass = 'badge-completed';
+    statusBadgeText = 'ANALYSIS COMPLETE';
+  } else if (healthState === 'INTERRUPTED') {
+    statusBadgeClass = 'badge-offline';
+    statusBadgeText = 'STREAM INTERRUPTED';
+  } else if (healthState === 'RECOVERED') {
+    statusBadgeClass = 'badge-running';
+    statusBadgeText = 'STREAM RECOVERED';
+  } else if (healthState === 'DEGRADED') {
+    statusBadgeClass = 'badge-warning';
+    statusBadgeText = 'STREAM DEGRADED';
+  } else if (healthState === 'STALE_FROZEN') {
+    statusBadgeClass = 'badge-warning';
+    statusBadgeText = 'CAMERA FROZEN';
+  } else if (healthState === 'RECONNECTING' || wsStatus === 'RECONNECTING') {
+    statusBadgeClass = 'badge-warning';
+    statusBadgeText = 'RECONNECTING...';
+  } else if (camera && !isCameraOnline && !isLiveMode) {
+    statusBadgeClass = 'badge-offline';
+    statusBadgeText = 'CAMERA OFFLINE';
+  } else if (analysisStatus === 'ANALYZING' || analysisStatus === 'EVENT_DETECTED') {
+    statusBadgeClass = 'badge-running';
+    statusBadgeText = 'ANALYSIS RUNNING';
+  } else if (analysisStatus === 'STARTING') {
+    statusBadgeClass = 'badge-running';
+    statusBadgeText = 'STARTING...';
+  } else {
+    statusBadgeClass = 'badge-online';
+    statusBadgeText = 'STREAM HEALTHY';
   }
+
 
   return (
     <header className="top-system-bar">

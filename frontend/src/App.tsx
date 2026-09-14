@@ -26,6 +26,7 @@ import {
   fetchEventEvidence,
   acknowledgeEvent,
   disconnectCamera,
+  checkBackendHealth,
 } from './services/api';
 
 import { TelemetryWebSocket } from './services/websocket';
@@ -57,6 +58,25 @@ export const App: React.FC = () => {
   });
 
   const [wsStatus, setWsStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING'>('RECONNECTING');
+  const [isBackendOnline, setIsBackendOnline] = useState<boolean>(true);
+
+  // Periodic Backend Health Probe
+  useEffect(() => {
+    let isMounted = true;
+    const probe = async () => {
+      const res = await checkBackendHealth();
+      if (isMounted) {
+        setIsBackendOnline(res.ok);
+      }
+    };
+    probe();
+    const timer = setInterval(probe, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, []);
+
 
   // 1. Initial Load: Cameras & Events
   useEffect(() => {
@@ -234,6 +254,9 @@ export const App: React.FC = () => {
         environment={telemetry.environment}
         fps={telemetry.fps}
         systemHealth={wsStatus === 'CONNECTED' ? 'HEALTHY' : 'RECONNECTING'}
+        isBackendOnline={isBackendOnline}
+        wsStatus={wsStatus}
+        hasActiveSecurityEvent={Boolean(activeAlertEvent)}
       />
 
       {/* 2. Main Dashboard Layout (Left Nav + Central Deck) */}

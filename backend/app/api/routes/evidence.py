@@ -134,8 +134,10 @@ def get_evidence_signed_url(evidence_id: str, expires_in_seconds: int = 3600):
         "file_name": file_name,
         "is_cloud_available": signed_url is not None,
         "signed_url": signed_url,
-        "local_storage_reference": storage_ref,
+        "storage_reference": f"evidence/{camera_id}/{event_id}/{file_name}",
+        "file_url": f"/api/v1/evidence/{evidence_id}/file",
     }
+
 
 
 @router.get("/{evidence_id}/file")

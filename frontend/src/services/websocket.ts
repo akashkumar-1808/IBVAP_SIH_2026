@@ -1,23 +1,30 @@
 /**
- * Reconnecting WebSocket Telemetry Client
+ * Reconnecting WebSocket Telemetry Client for IBVAP.
+ * 
+ * Supports remote AWS EC2 deployment via centralized getWsUrl(), automatic
+ * exponential reconnection backoff, and prototype query-token authentication.
  */
 
 import { TelemetryPacket } from '../types';
+import { getWsUrl, API_KEY } from '../config';
 
 export class TelemetryWebSocket {
   private ws: WebSocket | null = null;
-  private url: string;
+  private path: string;
   private onPacketCallback: (packet: TelemetryPacket) => void;
   private onStatusCallback: (status: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING') => void;
   private isManualClose = false;
   private reconnectTimeout: number | null = null;
+  private reconnectAttempts = 0;
+  private readonly maxBackoffMs = 10000;
+  private readonly baseBackoffMs = 2000;
 
   constructor(
-    url: string,
+    path: string,
     onPacket: (packet: TelemetryPacket) => void,
     onStatus: (status: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING') => void
   ) {
-    this.url = url;
+    this.path = path;
     this.onPacketCallback = onPacket;
     this.onStatusCallback = onStatus;
   }
@@ -26,14 +33,22 @@ export class TelemetryWebSocket {
     this.isManualClose = false;
     this.onStatusCallback('RECONNECTING');
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = this.url.startsWith('ws') ? this.url : `${protocol}//${host}${this.url}`;
+    // Resolve URL through centralized remote backend configuration
+    let wsUrl = this.path.startsWith('ws://') || this.path.startsWith('wss://')
+      ? this.path
+      : getWsUrl(this.path);
+
+    // Attach prototype API key if configured
+    if (API_KEY && !wsUrl.includes('api_key=')) {
+      const sep = wsUrl.includes('?') ? '&' : '?';
+      wsUrl = `${wsUrl}${sep}api_key=${encodeURIComponent(API_KEY)}`;
+    }
 
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
+        this.reconnectAttempts = 0;
         this.onStatusCallback('CONNECTED');
       };
 
@@ -42,7 +57,7 @@ export class TelemetryWebSocket {
           const packet: TelemetryPacket = JSON.parse(event.data);
           this.onPacketCallback(packet);
         } catch (e) {
-          console.warn('Failed to parse telemetry packet:', e);
+          console.warn('[TelemetryWS] Failed to parse packet:', e);
         }
       };
 
@@ -64,9 +79,12 @@ export class TelemetryWebSocket {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+    this.reconnectAttempts++;
+    // Exponential backoff with jitter: 2s -> 4s -> 8s -> 10s max
+    const delay = Math.min(this.baseBackoffMs * Math.pow(1.5, this.reconnectAttempts - 1), this.maxBackoffMs);
     this.reconnectTimeout = window.setTimeout(() => {
       this.connect();
-    }, 2000);
+    }, delay);
   }
 
   public disconnect(): void {

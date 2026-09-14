@@ -1,5 +1,7 @@
 /**
  * IBVAP Operator Console REST API Client
+ * 
+ * Supports centralized remote EC2 backend connectivity and local development fallback.
  */
 
 import {
@@ -9,11 +11,61 @@ import {
   EvidencePackage,
   DemonstrationScenario,
 } from '../types';
+import { getApiUrl, API_KEY } from '../config';
 
 const API_BASE = '/api/v1';
 
+/**
+ * Builds request headers with prototype API Key authentication if configured.
+ */
+function authHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (API_KEY) {
+    headers['X-API-Key'] = API_KEY;
+    headers['Authorization'] = `Bearer ${API_KEY}`;
+  }
+  return headers;
+}
+
+/**
+ * Appends prototype API key query param for media endpoints loaded by browser <img> / <video> tags.
+ */
+function withAuthQuery(url: string): string {
+  if (!API_KEY) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}api_key=${encodeURIComponent(API_KEY)}`;
+}
+
+/**
+ * Fast production probe checking if the AI backend is reachable.
+ */
+export async function checkBackendHealth(): Promise<{
+  ok: boolean;
+  status: string;
+  database_status?: string;
+  app_name?: string;
+}> {
+  try {
+    const res = await fetch(getApiUrl('/health?check_db=false'), {
+      headers: authHeaders(),
+    });
+    if (!res.ok) return { ok: false, status: `HTTP ${res.status}` };
+    const data = await res.json();
+    return {
+      ok: data.status === 'ok',
+      status: data.status,
+      database_status: data.database_status,
+      app_name: data.app_name,
+    };
+  } catch (err: any) {
+    return { ok: false, status: err?.message || 'UNREACHABLE' };
+  }
+}
+
 export async function fetchCameras(): Promise<CameraInfo[]> {
-  const res = await fetch(`${API_BASE}/cameras`);
+  const res = await fetch(getApiUrl(`${API_BASE}/cameras`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch cameras: ${res.statusText}`);
   return res.json();
 }
@@ -33,9 +85,9 @@ export async function connectCamera(params: {
     delete payload.rtsp_url;
   }
 
-  const res = await fetch(`${API_BASE}/cameras/connect`, {
+  const res = await fetch(getApiUrl(`${API_BASE}/cameras/connect`), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -46,23 +98,27 @@ export async function connectCamera(params: {
 }
 
 export async function disconnectCamera(cameraId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/cameras/${cameraId}/disconnect`, {
+  const res = await fetch(getApiUrl(`${API_BASE}/cameras/${cameraId}/disconnect`), {
     method: 'POST',
+    headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`Failed to disconnect camera ${cameraId}`);
   return res.json();
 }
 
 export async function deleteCamera(cameraId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/cameras/${cameraId}`, {
+  const res = await fetch(getApiUrl(`${API_BASE}/cameras/${cameraId}`), {
     method: 'DELETE',
+    headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`Failed to remove camera ${cameraId}`);
   return res.json();
 }
 
 export async function fetchCameraCalibration(cameraId: string): Promise<CameraCalibration> {
-  const res = await fetch(`${API_BASE}/cameras/${cameraId}/calibration`);
+  const res = await fetch(getApiUrl(`${API_BASE}/cameras/${cameraId}/calibration`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch calibration for ${cameraId}`);
   return res.json();
 }
@@ -77,33 +133,41 @@ export async function fetchEvents(params?: {
   if (params?.priority) query.set('priority', params.priority);
   if (params?.limit) query.set('limit', String(params.limit));
 
-  const res = await fetch(`${API_BASE}/events?${query.toString()}`);
+  const res = await fetch(getApiUrl(`${API_BASE}/events?${query.toString()}`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch events: ${res.statusText}`);
   return res.json();
 }
 
 export async function fetchEvent(eventId: string): Promise<EventRecord> {
-  const res = await fetch(`${API_BASE}/events/${eventId}`);
+  const res = await fetch(getApiUrl(`${API_BASE}/events/${eventId}`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch event ${eventId}`);
   return res.json();
 }
 
 export async function fetchEventEvidence(eventId: string): Promise<EvidencePackage> {
-  const res = await fetch(`${API_BASE}/events/${eventId}/evidence`);
+  const res = await fetch(getApiUrl(`${API_BASE}/events/${eventId}/evidence`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch evidence for event ${eventId}`);
   return res.json();
 }
 
 export async function verifyEvidenceIntegrity(evidenceId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/evidence/${evidenceId}/verify`);
+  const res = await fetch(getApiUrl(`${API_BASE}/evidence/${evidenceId}/verify`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to verify evidence ${evidenceId}`);
   return res.json();
 }
 
 export async function acknowledgeEvent(eventId: string, operatorName: string = 'Operator'): Promise<any> {
-  const res = await fetch(`${API_BASE}/events/${eventId}/acknowledge`, {
+  const res = await fetch(getApiUrl(`${API_BASE}/events/${eventId}/acknowledge`), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ acknowledged_by: operatorName }),
   });
   if (!res.ok) throw new Error(`Failed to acknowledge event ${eventId}`);
@@ -111,15 +175,17 @@ export async function acknowledgeEvent(eventId: string, operatorName: string = '
 }
 
 export async function fetchScenarios(): Promise<DemonstrationScenario[]> {
-  const res = await fetch(`${API_BASE}/scenarios`);
+  const res = await fetch(getApiUrl(`${API_BASE}/scenarios`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch scenarios`);
   return res.json();
 }
 
 export async function runScenario(scenarioId: string, speedFactor: number = 1.0): Promise<any> {
-  const res = await fetch(`${API_BASE}/scenarios/${scenarioId}/run`, {
+  const res = await fetch(getApiUrl(`${API_BASE}/scenarios/${scenarioId}/run`), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ speed_factor: speedFactor }),
   });
   if (!res.ok) throw new Error(`Failed to run scenario ${scenarioId}`);
@@ -127,11 +193,11 @@ export async function runScenario(scenarioId: string, speedFactor: number = 1.0)
 }
 
 export function getEvidenceFileUrl(evidenceId: string): string {
-  return `${API_BASE}/evidence/${evidenceId}/file`;
+  return withAuthQuery(getApiUrl(`${API_BASE}/evidence/${evidenceId}/file`));
 }
 
 export function getStreamUrl(cameraId: string): string {
-  return `${API_BASE}/streams/${cameraId}/live`;
+  return withAuthQuery(getApiUrl(`${API_BASE}/streams/${cameraId}/live`));
 }
 
 export async function uploadAnalysisVideo(
@@ -152,7 +218,11 @@ export async function uploadAnalysisVideo(
     formData.append('file', file);
     formData.append('camera_id', cameraId);
 
-    xhr.open('POST', `${API_BASE}/cameras/upload`);
+    xhr.open('POST', getApiUrl(`${API_BASE}/cameras/upload`));
+    if (API_KEY) {
+      xhr.setRequestHeader('X-API-Key', API_KEY);
+      xhr.setRequestHeader('Authorization', `Bearer ${API_KEY}`);
+    }
 
     if (xhr.upload && onProgress) {
       xhr.upload.onprogress = (e) => {
@@ -171,7 +241,7 @@ export async function uploadAnalysisVideo(
           resolve({
             status: 'READY TO ANALYZE',
             file_name: file.name,
-            video_path: '',
+            video_path: file.name,
             file_size_bytes: file.size,
             camera_id: cameraId,
             message: 'Uploaded',
@@ -197,9 +267,9 @@ export async function runAnalysis(params: {
   video_file_path: string;
   device?: string;
 }): Promise<any> {
-  const res = await fetch(`${API_BASE}/cameras/run-analysis`, {
+  const res = await fetch(getApiUrl(`${API_BASE}/cameras/run-analysis`), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(params),
   });
   if (!res.ok) {
@@ -210,9 +280,9 @@ export async function runAnalysis(params: {
 }
 
 export async function stopAnalysis(cameraId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/cameras/stop-analysis`, {
+  const res = await fetch(getApiUrl(`${API_BASE}/cameras/stop-analysis`), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ camera_id: cameraId }),
   });
   if (!res.ok) throw new Error(`Failed to stop analysis for ${cameraId}`);
@@ -227,7 +297,9 @@ export async function fetchAnalysisStatus(cameraId: string): Promise<{
   video_path?: string;
   is_running: boolean;
 }> {
-  const res = await fetch(`${API_BASE}/cameras/${cameraId}/analysis-status`);
+  const res = await fetch(getApiUrl(`${API_BASE}/cameras/${cameraId}/analysis-status`), {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch analysis status`);
   return res.json();
 }

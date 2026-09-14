@@ -1,0 +1,43 @@
+# IBVAP Production Caddyfile for AWS EC2 Reverse Proxy
+# Architecture Decision: DEC-0012
+#
+# Terminates TLS 1.3 / HTTPS on port 443 with automatic Let's Encrypt certificates.
+# Securely proxies HTTP and WebSockets to the internal FastAPI backend on 127.0.0.1:8000.
+#
+# Usage:
+#   Set the environment variable AI_BACKEND_DOMAIN before launching Caddy:
+#   export AI_BACKEND_DOMAIN="api.ibvap-border.com"
+#   caddy run --config deploy/Caddyfile
+
+{$AI_BACKEND_DOMAIN:localhost} {
+    # Automatic TLS & modern compression
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Reverse proxy all REST and WebSocket connections to internal FastAPI
+    reverse_proxy 127.0.0.1:8000 {
+        # Transparent WebSocket upgrade headers and client IP forwarding
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Streaming timeout supporting long-running telemetry and MJPEG stream
+        transport http {
+            read_timeout 300s
+            write_timeout 300s
+        }
+    }
+
+    # Structured access logging
+    log {
+        output stdout
+        format console
+    }
+}

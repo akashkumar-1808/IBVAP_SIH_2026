@@ -63,7 +63,25 @@ manager = ConnectionManager()
 
 @router.websocket("/ws/telemetry")
 async def websocket_telemetry_endpoint(websocket: WebSocket):
-    """Real-time bi-directional telemetry connection."""
+    """Real-time bi-directional telemetry connection with prototype API authentication."""
+    from ...config import settings
+    from fastapi import status
+
+    if settings.get_api_key_value():
+        # Check query parameter (?api_key=... or ?token=...)
+        token = websocket.query_params.get("api_key") or websocket.query_params.get("token")
+        if not token:
+            token = websocket.headers.get("x-api-key")
+        if not token:
+            auth_h = websocket.headers.get("authorization", "")
+            if auth_h.startswith("Bearer "):
+                token = auth_h[7:].strip()
+
+        if not settings.verify_api_token(token):
+            logger.warning("[WebSocket] Connection rejected: unauthorized API token.")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
+            return
+
     await manager.connect(websocket)
     try:
         while True:
@@ -72,6 +90,7 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
             # Handle client ping or operator ack commands if sent via WS
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
     except Exception as exc:
         logger.warning(f"WebSocket session closed: {exc}")
         manager.disconnect(websocket)

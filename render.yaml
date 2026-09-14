@@ -1,34 +1,22 @@
 services:
+  # Render Static Site for IBVAP React Operator Console
   - type: web
     name: ibvap-console
-    runtime: python
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && pip uninstall -y opencv-python && pip install --force-reinstall opencv-python-headless"
-    startCommand: "python start.py"
-    healthCheckPath: "/health?check_db=false"
+    env: static
+    buildCommand: "cd frontend && npm install && npm run build"
+    staticPublishPath: "frontend/dist"
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
-      - key: ENVIRONMENT
-        value: production
-      - key: APP_NAME
-        value: IBVAP-Console
-      - key: HOST
-        value: 0.0.0.0
-      - key: AUTO_START_DEMO_PIPELINE
-        value: "false"
-      - key: DEMO_VIDEO_PATH
-        value: storage/samples/test_video.mp4
-      - key: DEFAULT_CAMERA_ID
-        value: DEMO-CAM-01
-      - key: DEFAULT_DEVICE
-        value: cpu
-      - key: MODEL_TYPE
-        value: yolov8
-      - key: YOLO_MODEL_PATH
-        value: models/detector/yolov8n.pt
-      - key: STORAGE_ROOT
-        value: storage
-      - key: SUPABASE_URL
+      - key: VITE_API_BASE_URL
         sync: false
-      - key: SUPABASE_ANON_KEY
+      - key: VITE_WS_BASE_URL
         sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
+      - key: VITE_API_KEY
         sync: false

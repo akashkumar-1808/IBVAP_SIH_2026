@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     YOLO_MODEL_PATH: str = Field(default="models/detector/yolov8n.pt", description="Legacy path to YOLO weights file")
     AUTO_START_DEMO_PIPELINE: bool = Field(default=False, description="Auto-start live demo pipeline on server startup")
 
+    # CORS & Security settings
+    CORS_ORIGINS: str = Field(
+        default="http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000",
+        description="Comma-separated list of allowed CORS origins",
+    )
+    API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Prototype API authentication key for browser-to-backend communication",
+    )
+
     # Supabase credentials & endpoints (Sensitive)
     SUPABASE_URL: Optional[str] = Field(default=None, description="Supabase project URL endpoint")
     SUPABASE_ANON_KEY: Optional[SecretStr] = Field(default=None, description="Supabase public anon key")
@@ -43,6 +53,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=True,
+
     )
 
     @property
@@ -70,6 +81,32 @@ class Settings(BaseSettings):
             if val and not val.startswith("your-"):
                 return val
         return None
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parses comma-separated CORS_ORIGINS into an explicit origin allowlist."""
+        if not self.CORS_ORIGINS:
+            return ["http://localhost:5173", "http://127.0.0.1:5173"]
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    def get_api_key_value(self) -> Optional[str]:
+        """Safely extracts prototype API key string."""
+        if self.API_KEY:
+            val = self.API_KEY.get_secret_value().strip()
+            if val and not val.startswith("your-"):
+                return val
+        return None
+
+    def verify_api_token(self, token: Optional[str]) -> bool:
+        """Verifies candidate token against configured API_KEY in constant time."""
+        configured = self.get_api_key_value()
+        if not configured:
+            return True  # Auth is open if no API_KEY configured (dev fallback)
+        if not token:
+            return False
+        import hmac
+        return hmac.compare_digest(configured, token.strip())
+
 
     @property
     def repo_root(self):

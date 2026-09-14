@@ -67,18 +67,57 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS configuration for React frontend integration
+    # Explicit CORS configuration for Render frontend and local development allowlist
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=settings.cors_origins_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
+
+    @app.middleware("http")
+    async def api_key_auth_middleware(request: Request, call_next):
+        """
+        Prototype API Key authentication gate for browser-to-backend communication.
+        Protects /api/v1/* endpoints while keeping /health, /, /docs, and static assets public.
+        """
+        path = request.url.path
+        # Keep public endpoints, docs, static console, and CORS preflight OPTIONS unrestricted
+        if (
+            request.method == "OPTIONS"
+            or path in ("/", "/health", "/docs", "/openapi.json", "/redoc", "/favicon.ico")
+            or path.startswith("/health")
+            or path.startswith("/console")
+            or path.startswith("/assets")
+        ):
+            return await call_next(request)
+
+        # Enforce authentication on protected API endpoints when API_KEY is configured
+        if settings.get_api_key_value() and path.startswith(settings.API_V1_STR):
+            token = request.headers.get("x-api-key")
+            if not token:
+                auth_header = request.headers.get("authorization", "")
+                if auth_header.startswith("Bearer "):
+                    token = auth_header[7:].strip()
+            if not token:
+                token = request.query_params.get("api_key")
+
+            if not settings.verify_api_token(token):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or missing API key. Access denied."},
+                )
+
+        return await call_next(request)
+
     # Root health endpoint and API v1 endpoints
     app.include_router(health.router)
     app.include_router(api_router, prefix=settings.API_V1_STR)
+
 
     # Mount compiled React Operator Console if dist exists
     import os

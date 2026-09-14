@@ -1005,10 +1005,11 @@ async def upload_video(
         logger.error(f"Failed to save uploaded video: {exc}")
         raise HTTPException(status_code=500, detail=f"Failed to write uploaded file: {str(exc)}")
 
+    storage_ref = f"uploads/{dest_filename}"
     _ANALYSIS_STATUS[camera_id] = {
         "status": "READY TO ANALYZE",
         "file_name": file.filename,
-        "video_path": str(dest_path),
+        "video_path": storage_ref,
         "file_size": total_bytes,
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1017,11 +1018,12 @@ async def upload_video(
     return UploadVideoResponse(
         status="READY TO ANALYZE",
         file_name=file.filename,
-        video_path=str(dest_path),
+        video_path=storage_ref,
         file_size_bytes=total_bytes,
         camera_id=camera_id,
         message=f"Video '{file.filename}' uploaded successfully ({total_bytes / (1024*1024):.1f} MB). Ready to analyze.",
     )
+
 
 
 @router.post("/run-analysis", response_model=Dict[str, Any])
